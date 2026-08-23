@@ -51,7 +51,36 @@ const APP_DIR = path.join(RES, 'app');
  * hand them your key too.
  */
 const SOURCES = ['electron', 'src', 'profile', 'package.json'];
-const RUNTIME_MODULES = ['playwright', 'playwright-core'];
+/**
+ * Production dependencies, resolved transitively from package.json.
+ *
+ * Derived rather than listed: a hardcoded list silently goes stale the moment a
+ * dependency is added, and the failure is a packaged app that dies on an
+ * ERR_MODULE_NOT_FOUND you only see on a machine without a dev node_modules.
+ * Adding @anthropic-ai/sdk did exactly that.
+ */
+function productionModules() {
+  const rootPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  const found = new Set();
+
+  const walk = (names) => {
+    for (const name of names) {
+      if (found.has(name)) continue;
+      const dir = path.join(ROOT, 'node_modules', name);
+      if (!fs.existsSync(dir)) continue;
+      found.add(name);
+      try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+        walk(Object.keys(pkg.dependencies ?? {}));
+      } catch {
+        /* a package without a readable manifest has no deps we can follow */
+      }
+    }
+  };
+
+  walk(Object.keys(rootPkg.dependencies ?? {}));
+  return [...found];
+}
 
 const plist = (...args) => execFileSync('/usr/libexec/PlistBuddy', args).toString().trim();
 
@@ -139,11 +168,27 @@ for (const entry of SOURCES) {
   });
 }
 
-step('adding runtime dependencies…');
-for (const mod of RUNTIME_MODULES) {
-  const from = path.join(ROOT, 'node_modules', mod);
-  if (!fs.existsSync(from)) throw new Error(`missing dependency: ${mod} (run npm install)`);
-  fs.cpSync(from, path.join(APP_DIR, 'node_modules', mod), { recursive: true });
+const modules = productionModules();
+step(`adding ${modules.length} runtime dependencies…`);
+for (const mod of modules) {
+  fs.cpSync(path.join(ROOT, 'node_modules', mod), path.join(APP_DIR, 'node_modules', mod), {
+    recursive: true,
+  });
+}
+
+// Prove the app can actually load its own entry point before we sign it — the
+// alternative is finding out on someone else's Mac.
+step('verifying imports resolve…');
+{
+  const probe = `import('${path.join(APP_DIR, 'src', 'judge', 'llm.js')}').then(()=>process.exit(0)).catch(e=>{console.error(e.message);process.exit(1)})`;
+  const res = require('node:child_process').spawnSync(
+    path.join(OUT, 'Contents', 'MacOS', APP_NAME),
+    ['-e', probe],
+    { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8' },
+  );
+  if (res.status !== 0) {
+    throw new Error(`the bundled app cannot load its own modules:\n${res.stderr || res.stdout}`);
+  }
 }
 
 /**
