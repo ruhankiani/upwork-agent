@@ -524,10 +524,14 @@ const server = createServer(async (req, res) => {
     // by the tray menu and the Schedule tab's "Run now".
     if (url.pathname === '/api/schedule/run-now' && req.method === 'POST') {
       if (running) return send(res, 409, { ok: false, error: 'Something is already running.' });
-      const { limit } = scheduler.getState().config;
+      const { limit, maxRunMinutes } = scheduler.getState().config;
+      const startedAt = new Date().toISOString();
+      scheduler.note('▶ Starting run (you pressed Run now)');
       // Deliberately not awaited: a run takes minutes and the caller only needs
       // to know it started. Progress arrives on /api/status and /api/events.
-      scheduledRun({ limit }).catch(() => {});
+      scheduledRun({ limit, timeoutMs: (maxRunMinutes ?? 45) * 60_000 })
+        .then((result) => scheduler.recordRun(result, { startedAt }))
+        .catch(() => {});
       return send(res, 200, { ok: true, started: true });
     }
 

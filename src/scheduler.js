@@ -416,6 +416,22 @@ function tick() {
 }
 
 /**
+ * Record a run that did not come from a slot — "Run now", from the app or the
+ * menu bar. Without this the Last run panel only ever reflected the scheduler,
+ * so a manual run appeared to have left no trace.
+ */
+export async function recordRun(result, { startedAt = null } = {}) {
+  state.lastRunAt = startedAt ?? new Date().toISOString();
+  state.lastResult = result;
+  const r = result ?? {};
+  if (r.needsAttention) log('■ Run stopped — Cloudflare wants a check.', 'warn');
+  else if (r.ok === false) log(`■ Run failed${r.error ? `: ${r.error}` : ''}`, 'error');
+  else log(`■ Run finished — ${r.added ?? 0} new, ${r.top ?? 0} top pick(s)`);
+  await persistState().catch(() => {});
+  reschedule();
+}
+
+/**
  * Re-evaluate immediately rather than waiting for the next tick.
  *
  * Called after the machine wakes from sleep: timers that should have fired

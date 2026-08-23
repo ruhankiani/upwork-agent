@@ -316,7 +316,7 @@ function paintUnseen() {
       needsAttention
         ? 'Upwork Agent — needs a Cloudflare check'
         : unseen
-          ? `Upwork Agent — ${unseen} new since you last looked`
+          ? `Upwork Agent — ${unseen} new top pick${unseen === 1 ? '' : 's'} since you last looked`
           : 'Upwork Agent',
     );
   }
@@ -380,13 +380,21 @@ function notify({ title, body, view = 'jobs' }) {
 
 /** Turn a finished run into something worth reading on a lock screen. */
 function describeRun(summary) {
+  // Top picks lead, always. The count of new postings is context; the count
+  // that reached Top picks is the only number that decides whether opening the
+  // app right now is worth it.
+  //
   // "Nothing new" is a real, common and successful outcome — Upwork simply had
   // no postings you hadn't already seen. Say so, rather than leaving silence
   // that reads as a failure.
-  if (!summary || !summary.added) return 'Ran fine — no postings you had not already seen.';
-  const added = `${summary.added} new job${summary.added === 1 ? '' : 's'}`;
-  if (!summary.top) return `${added}, none scoring 60+. See All recent.`;
-  return `${added} · ${summary.top} top pick${summary.top === 1 ? '' : 's'}`;
+  const added = summary?.added ?? 0;
+  const top = summary?.top ?? 0;
+
+  if (!added) return 'Ran fine — 0 new top picks, nothing new posted.';
+
+  const jobs = `${added} new job${added === 1 ? '' : 's'} fetched`;
+  if (!top) return `0 new top picks — ${jobs}, none scored 60+.`;
+  return `${top} new top pick${top === 1 ? '' : 's'} — from ${jobs}.`;
 }
 
 /* ================= server event stream ================= */
@@ -441,10 +449,11 @@ function handleEvent(event) {
 
   if (!schedule.config?.notify) return;
 
-  if (event.type === 'run-finished' && event.ok && event.summary?.added) {
-    // Count top picks when there are any, otherwise the raw arrivals — the
-    // number should mean "things worth opening the app for".
-    addUnseen(event.summary.top || event.summary.added);
+  if (event.type === 'run-finished' && event.ok && event.summary?.top) {
+    // Top picks only. The number in the menu bar has to mean one thing, and
+    // "jobs worth opening the app for" is the only useful one — counting raw
+    // arrivals would show a 40 that mostly represents postings you'd skip.
+    addUnseen(event.summary.top);
   }
   if (event.type === 'attention') {
     needsAttention = true;

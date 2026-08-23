@@ -4,83 +4,210 @@ Watches Upwork for new job postings, judges each one against your portfolio with
 ranks them so you only look at what's worth your time.
 
 Runs locally as a macOS app. Nothing is hosted, no Upwork account is logged in, and the browser it
-drives stays hidden. It can run on a schedule in the background and tell you when something turns
-up.
+drives stays hidden. It can run on a schedule in the background and notify you when something
+worth your time turns up.
+
+**Contents** — [Install](#install) · [First run](#first-run-5-minutes) ·
+[Choosing the judge](#choosing-the-judge) · [Notifications](#notifications-macos-setup) ·
+[Every setting](#every-setting) · [Daily use](#daily-use) ·
+[Giving it to someone else](#giving-it-to-someone-else) · [Troubleshooting](#troubleshooting)
 
 ---
 
-## Quick start
+## Install
 
-You need a Mac, and about five minutes.
+You need a Mac and about five minutes.
 
 ```bash
 git clone <this repo> && cd upwork-agent
-npm install                      # dependencies + ad-hoc signs the dev Electron
-npx playwright install chromium  # the browser it drives (~365 MB, one time)
-npm run pack                     # builds "Upwork Agent.app"
+
+npm install                      # dependencies, and ad-hoc signs the dev Electron
+npx playwright install chromium  # the browser it drives — ~365 MB, one time
+npm run pack                     # builds "Upwork Agent.app" into dist/
 npm run install-app              # copies it to /Applications
 ```
 
-Then open **Upwork Agent** from Applications and do three things:
+Then open **Upwork Agent** from your Applications folder.
 
-1. **Judge tab** — pick a model and paste an API key (see below). Press **Test**.
-2. **Portfolio tab** — paste your CV or Upwork profile, and list the work you'd turn down.
-3. **Fetch & score** — the button in the top right. First run takes a few minutes.
+**Requirements:** macOS (the scheduler, menu bar and notifications are macOS-specific), and
+**Node 20 or newer** to build it. Node is not needed to *run* the built app.
 
-That's it. The **Schedule** tab turns it into something that keeps watching on its own.
+> **Why build it rather than `npm start`?** `npm start` works and is fine for development, but it
+> runs under Electron's shared identity from inside `node_modules`, and macOS will not display
+> notifications from that. The built app has its own identity, its own icon, and working
+> notifications. See [Notifications](#notifications-macos-setup).
 
-### Giving it to someone else
+---
 
-The built app is self-contained — it bundles its own browser and carries no API key — so
-`dist/Upwork Agent.app` can be copied to another Mac and it will run with nothing installed. They
-open it, add their own key in the Judge tab, and paste their own portfolio.
+## First run (5 minutes)
 
-macOS will warn that it is from an unidentified developer, because the app is ad-hoc signed rather
-than notarised (that needs a paid Apple Developer account). Right-click the app → **Open** → **Open**
-once, and it never asks again.
+Open the app. Four things, in order.
+
+### 1. Judge tab — give it a model
+
+Nothing can be scored until there's an API key. Pick a provider, paste a key, press **Test**.
+Start with **Gemini**: it's free. See [Choosing the judge](#choosing-the-judge).
+
+### 2. Portfolio tab — tell it who you are
+
+| Box | What to put in it |
+|---|---|
+| **Portfolio** | Your CV or Upwork profile. Free text, any format. Paste and forget. |
+| **Exclusions** | Work you would turn down. **The strongest signal in the tool** — a posting whose core ask matches an exclusion is capped at 15 no matter how well it pays. |
+| **Keywords** | Generated from your portfolio by pattern matching (no AI). Press **Rebuild from my portfolio** after editing. Orders the judging queue. |
+| **Preferences** | Pay floors, freshness and competition targets, score caps. |
+| **Rubric** | How the judge weighs things. Edit only if scores feel consistently wrong. |
+
+Be specific in Exclusions. "I don't do WordPress theme work" beats "not interested in web design".
+
+### 3. Filters tab — tell it what to search
+
+Set the Upwork search you'd run yourself, then **Save & fetch**.
+
+**Easiest way:** set the filters you want on the Upwork search page in a normal browser, copy the
+URL from the address bar, and paste it into the URL box. Every filter is read out of it.
+
+Your search query is the real filter — keep it tight. Nothing is skipped for being off-topic
+(see [What reaches the model](#what-reaches-the-model-and-what-doesnt)), so a broad search means
+paying to judge postings you'd never take.
+
+### 4. Press **Fetch & score**
+
+Top right. The first run takes a few minutes — it loads each job's own page for proposal counts
+and client history, which is the slow part, not the AI. Watch the progress bar.
+
+When it finishes, open **Top picks**.
 
 ---
 
 ## Choosing the judge
 
 Every posting is read by a model and scored against your portfolio. Two providers, chosen in the
-**Judge** tab — the key is stored on your machine only, and goes nowhere except to the provider.
+**Judge** tab. Your key is stored on your machine only and goes nowhere except to the provider you
+picked.
 
 | | **Google Gemini** | **Anthropic Claude** |
 |---|---|---|
-| Cost | **Free** (15 requests/min) | Paid, ~a fraction of a cent per job |
-| Key from | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
-| Good for | Getting started, high volume | Better judgement on close calls |
+| Cost | **Free** — 15 requests/min | Paid — roughly a fraction of a cent per job |
+| Get a key | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| Models | Gemini 3.1 Flash Lite *(default)*, Flash | Claude Opus 5 *(default)*, Sonnet 5, Haiku 4.5 |
+| Good for | Getting started, high volume | Better judgement on the close calls |
 
-**Start with Gemini.** It's free and its scores are reasonable.
+**Start with Gemini.** It's free, and its scores are reasonable.
 
-**Switch to Claude when the near-misses start costing you.** The hard question isn't "does this
-posting mention GA4" — it's "is this the kind of work I actually do, or does it merely use the same
-tools." That's a reasoning call, and it's where a stronger model earns its money. Claude runs with
+**Switch to Claude when the near-misses start costing you.** The easy question is "does this
+posting mention GA4" — any model gets that right. The hard one is *"is this actually the kind of
+work I do, or does it merely use the same tools"*, and that's a reasoning call. Claude runs with
 adaptive thinking, so it spends more effort on the ambiguous postings and less on the obvious ones.
 
-Either way, press **Test** after pasting a key. It makes a real round trip, so a key that
-authenticates but can't do what the judge needs fails here rather than at 3am.
+Cost in practice: at ~40 jobs a run, Claude Opus 5 costs cents per run, not dollars. Switch model
+to Sonnet 5 or Haiku 4.5 in the same tab if you want it cheaper.
 
-A `GEMINI_API_KEY` in `.env` or the environment still works if you had one before.
+**Always press Test after pasting a key.** It makes a real round trip with the same structured-output
+machinery a real judgement uses, so a key that authenticates but cannot do the job fails here rather
+than silently at 3am.
 
----
-
-## Requirements
-
-- **macOS.** The scheduler, tray and notifications are macOS-specific.
-- **Node 20+**, to build. Not needed to *run* the built app.
-- Nothing else. The browser is downloaded by `npx playwright install chromium` and bundled into
-  the app.
+Your key is written to `data/llm.json` on your machine. The app only ever shows you a masked
+preview (`…a1b2`) — it can be replaced from the UI but never read back out, and it is never
+included in a build you hand to someone else.
 
 ---
 
-## Usage — the app
+## Notifications (macOS setup)
 
-Open it from Applications. One button — **Fetch & score** — pulls new jobs and judges them in one
-pass. The browser stays hidden; it only appears if Cloudflare wants a one-off click.
+After **every** run you get a notification, and it always leads with the number that matters:
 
-Four job views:
+| What happened | Notification says | Menu bar |
+|---|---|---|
+| 3 reached Top picks | **3 new top picks** — from 12 new jobs fetched. | `3` |
+| Nothing scored 60+ | **0 new top picks** — 12 new jobs fetched, none scored 60+. | — |
+| Nothing new posted | Ran fine — **0 new top picks**, nothing new posted. | — |
+| Cloudflare wants a click | Upwork Agent needs a moment | `⚠` |
+
+Clicking the notification opens the app on **Top picks**.
+
+The **number next to the briefcase in your menu bar is the count of new top picks** since you last
+opened the app. It is not a popup — it persists, so a run at 3am is still telling you about it at
+9am. Opening the window clears it. The dock icon carries the same number.
+
+### Getting macOS to actually show them
+
+macOS grants notification permission **per app**, and it only asks once.
+
+1. Open the app, go to the **Schedule** tab, and press **Send a test notification**.
+2. macOS asks whether to allow notifications for "Upwork Agent" — say **Allow**.
+3. A banner should appear. The **Activity** panel on the Schedule tab reports the result either
+   way: `Notification shown` or the exact failure.
+
+If nothing appears, open **System Settings → Notifications → Upwork Agent** and check:
+
+| Setting | Should be |
+|---|---|
+| **Allow Notifications** | On |
+| **Alert style** | **Alerts** (they stay until dismissed) rather than Banners (which vanish after ~5s) |
+| **Show in Notification Centre** | On, so you can catch up on missed ones |
+| **Show on Lock Screen** | On, if you want them while away |
+
+Also check **Focus / Do Not Disturb** is off, or add Upwork Agent to your Focus's allowed apps.
+
+The app ships configured as **Alerts**, so notifications stay on screen until you dismiss or click
+them — the right behaviour for something reporting on work you weren't watching.
+
+> **`npm run ui` and `npm start` cannot show notifications.** They run under Electron's shared
+> identity, which macOS will not deliver banners for. Only the installed app can. The menu-bar
+> count works in the installed app too.
+
+---
+
+## Every setting
+
+### Judge tab
+
+| Setting | What it does |
+|---|---|
+| Provider | Gemini (free) or Claude (paid) |
+| API key | Stored on this machine, in `data/llm.json`. Blank field on save = leave unchanged. |
+| Model | Which model of that provider judges |
+| **Test** | Real round trip — proves the key and model work |
+
+### Schedule tab
+
+| Setting | What it does |
+|---|---|
+| **Enable the schedule** | Master switch. Off = nothing runs on its own. |
+| **Days** | Which days it runs |
+| **Between … and …** | The daily window. An end earlier than the start means overnight — `22:00`–`06:00` belongs to the day it *starts*. |
+| **Every …** | Interval within the window. **15 minutes is the floor**, enforced in code. |
+| **Notify me when a run finishes** | Native notification after every run |
+| **Keep running after I close the window** | On = closing the window hides it to the menu bar, schedule intact. Off = closing quits the app. |
+| **Run once when the app starts** | Fires a run at launch |
+| **Judge at most … jobs per run** | Caps cost and run length. ~15 s per job, so 40 ≈ 10 minutes. |
+| **Stop background runs** | Red kill switch. Turns the schedule off; different from Quit. |
+| **Run now** | Fires a run immediately |
+| **Activity** | Every decision the scheduler makes, newest first |
+
+Also in the **menu bar** icon: Open, next run time, Run now, both toggles, Stop background runs,
+**Open at login**, and Quit.
+
+### Filters tab
+
+Every Upwork search filter, plus a URL box you can paste a search into. See
+[Flags](#flags) for the full list and their quirks — the app's form and the CLI share one
+definition, so anything there is available here.
+
+### Portfolio tab
+
+Portfolio, Exclusions, Keywords, Preferences, Rubric — see [First run](#2-portfolio-tab--tell-it-who-you-are).
+
+`profile/preferences.json` is where the deterministic half of the score lives: pay floors and
+targets, freshness and competition thresholds, the score caps ("gates"), and `scoreMaxAgeHours`.
+Every value is commented in the file itself.
+
+---
+
+## Daily use
+
+### The four job views
 
 | Page | What's in it |
 |---|---|
@@ -90,13 +217,28 @@ Four job views:
 | **Issues** | Anything that failed — rate limits, unreadable job pages, judge errors |
 
 These are **nested slices of one archive, not separate piles**: a top pick also appears in All
-recent and in All jobs.
+recent and in All jobs. "Recent" means posted within `scoreMaxAgeHours` (48 hours by default), the
+same window the scorer judges — so a job shown as recent has always actually been judged. Every
+list sorts newest-first by default, and ties break on recency.
 
-"Recent" means posted within `scoreMaxAgeHours` (48 — two days), the same window the scorer judges,
-so a job shown as recent has always actually been judged. Every list sorts newest-first by default
-and ties break on recency.
+A common surprise: a posting whose client is private shows up under **Issues**. That's Upwork
+saying "this is a private listing", not a fault in the tool.
 
-### Where your files live
+### Day to day
+
+Once it's set up there is very little to do.
+
+- **Glance at the menu bar.** A number means that many new top picks are waiting.
+- **Click it, or the notification**, to open on Top picks.
+- **Sort and filter** within a view using the search box and sort dropdown.
+- **Re-score** after editing your portfolio or rubric — shift-click, or the Re-score button.
+
+**Fetch often.** Freshness and proposal count carry real weight: the same job that rates 70 in its
+first hour rates 45 once it's a day old with 50 proposals in. That's what the scheduler is for.
+
+---
+
+## Where your files live
 
 The app never writes inside its own bundle — that would invalidate its signature and be wiped by
 the next build — so everything you own lives outside it:
@@ -106,8 +248,11 @@ the next build — so everything you own lives outside it:
 | Job archive, filters, schedule, API keys | `~/Library/Application Support/upwork-agent/data` | `data/` in the repo |
 | Portfolio, rubric, preferences | `~/Library/Application Support/upwork-agent/profile` | `profile/` in the repo |
 
-The `profile/` shipped in the app is only a **seed**, copied out on first run. After that it's
-yours, and rebuilding never overwrites it.
+The `profile/` inside the app is only a **seed**, copied out on first run. After that it's yours,
+and rebuilding never overwrites it.
+
+**Nothing you fetch is ever committed.** `data/` is gitignored — the job archive, the search
+results, the Chrome profile and your API keys all stay on your machine.
 
 Moving an existing dev checkout to the installed app, carry your history over once:
 
@@ -115,7 +260,21 @@ Moving an existing dev checkout to the installed app, carry your history over on
 cp -R data ~/Library/Application\ Support/upwork-agent/
 ```
 
-Worth doing: `data/chrome-profile` holds the Cloudflare cookies.
+Worth doing: `data/chrome-profile` holds the Cloudflare cookies, so it saves you a challenge.
+
+---
+
+## Giving it to someone else
+
+The built app is **self-contained**: it bundles its own browser and carries no API key. Copy
+`dist/Upwork Agent.app` to another Mac and it runs with nothing installed — no Node, no
+`npm install`, no Playwright.
+
+They open it, add **their own** key in the Judge tab, and paste **their own** portfolio.
+
+macOS will warn that it's from an unidentified developer, because the app is ad-hoc signed rather
+than notarised (notarising needs a paid Apple Developer account). **Right-click the app → Open →
+Open.** It only asks once.
 
 ---
 
@@ -127,48 +286,23 @@ If you'd rather use a tab than an app window:
 npm run ui        # then open http://localhost:5173
 ```
 
-Same app, in a tab. Reads and writes the repo's `data/` and `profile/` rather than Application
-Support, so it's the right mode for development. It cannot show notifications — see below.
+Same app in a tab. Reads and writes the repo's `data/` and `profile/` rather than Application
+Support, so this is the right mode for development. It cannot show notifications.
 
 ---
 
-## Notifications
+## Troubleshooting
 
-### The menu-bar count
-
-Next to the briefcase in the menu bar, the app shows a number: how many things have turned up
-since you last opened it. Top picks when there are any, otherwise new postings. A `⚠` means a run
-needs a Cloudflare check. Opening the window clears it.
-
-This exists because a banner is a **transient** thing — it draws for a few seconds and is gone, and
-whether it draws at all depends on macOS agreeing to. The count does not: nothing can suppress
-`setTitle`, it survives you being away from the desk, and it is still correct an hour later. Treat
-the banner as the nudge and the count as the record.
-
-The dock icon carries the same number as a badge.
-
-### Notifications need a signed app
-
-macOS will not display a notification from an unsigned app — Electron 42 moved to Apple's
-`UNNotification` API, and an unsigned bundle silently emits `failed` instead of showing anything.
-The Electron that npm installs is unsigned, so `npm install` runs `scripts/sign-dev.cjs` to ad-hoc
-sign it. That needs no Apple Developer account and no network, and takes about a second.
-
-If notifications ever go quiet, run it again:
-
-```bash
-npm run sign
-```
-
-Notifications are configured as **alerts**, not banners (`NSUserNotificationAlertStyle` in the
-bundle's Info.plist), so they stay on screen until you dismiss or click them. A banner disappears
-after about five seconds, which is the wrong behaviour for something reporting on work you were not
-watching.
-
-If banners still never appear while the Activity log says `Notification shown`, macOS has accepted
-them and decided not to draw them. Check **System Settings → Notifications → Upwork Agent**:
-"Allow Notifications" on, and the style set to **Alerts** rather than None. The menu-bar count above
-keeps working either way.
+| Symptom | Cause and fix |
+|---|---|
+| **"No API key"** when scoring | Judge tab → paste a key → **Test** |
+| **Notifications never appear** | See [Notifications](#notifications-macos-setup). Check System Settings, and that you're using the installed app rather than `npm start`. |
+| **Schedule never fires** | Schedule tab → **Activity**. It says what it decided and why. Slots anchor to the *start time*, so enabling a 09:00–18:00 schedule at 23:00 means the first run is 09:00 tomorrow. |
+| **"a run is already in progress"** repeatedly | A run is outlasting your interval. Raise the interval or lower "jobs per run". |
+| **"Cloudflare wants a check"** | Open the app, press **Fetch & score** once, click the checkbox if one appears. Every later run reuses that clearance. |
+| **"Chrome for Testing is not installed"** | `npx playwright install chromium` (only in a dev checkout — the built app carries its own) |
+| **App won't open, "unidentified developer"** | Right-click → Open → Open |
+| **Nothing in Top picks but jobs were fetched** | New jobs land in **All recent** immediately; they only reach Top picks once scored *and* above 60. Check the Issues tab. |
 
 ---
 
@@ -315,6 +449,8 @@ wakes from sleep.
 
 ---
 
+---
+
 ### What reaches the model, and what doesn't
 
 Two rules run before a model call is made. Rejections are free — no API call, no page load —
@@ -367,6 +503,8 @@ node src/score.js --all --limit=250
 Under the hood it runs the same local server and the same `src/fetch.js`; the window is just a shell
 around it. Closing the window shuts the server down too — unless a schedule is enabled, in which
 case it keeps running in the menu bar and **Quit** from the tray menu is what stops it.
+
+---
 
 ---
 
