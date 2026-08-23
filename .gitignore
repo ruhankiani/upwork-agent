@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Runtime state: job archive, filters, schedule, Chrome's profile, API keys.
+# The installed app keeps its own copy in ~/Library/Application Support.
+data/
+
+# API keys. Set them in the app's Judge tab instead.
+.env
+
+# Build output
+dist/
+build/icon.iconset/
+
+# Editor / OS noise
+.DS_Store
+*.bak

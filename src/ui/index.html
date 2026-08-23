@@ -1,0 +1,1914 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Upwork Agent</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #fff; --line: #e3e3df; --text: #1c1c1a;
+    --muted: #6b6b66; --accent: #14a800; --accent-dark: #108000; --chip: #f0f0ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17171a; --panel: #1f1f23; --line: #303036; --text: #ececef;
+      --muted: #9a9aa2; --accent: #3ecf3e; --accent-dark: #35b535; --chip: #2a2a30;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 20px; border-bottom: 1px solid var(--line);
+    background: var(--panel); position: sticky; top: 0; z-index: 10;
+  }
+  header .status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  header button { flex: none; }
+  .tabs { flex: none; }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; flex: none; }
+  .grow { flex: 1; }
+  .status { color: var(--muted); font-size: 13px; }
+
+  /* app-shell tweaks: room for macOS traffic lights, draggable header */
+  body.electron.mac header { padding-left: 82px; }
+  body.electron header { -webkit-app-region: drag; }
+  body.electron header button, body.electron header .tabs { -webkit-app-region: no-drag; }
+
+  button {
+    font: inherit; font-size: 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    padding: 8px 14px;
+  }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent-dark); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+
+  .tabs { display: flex; gap: 2px; background: var(--chip); padding: 3px; border-radius: 9px; }
+  .tabs button { border: 0; background: transparent; padding: 6px 14px; font-size: 13.5px; border-radius: 7px; }
+  .tabs button.on { background: var(--panel); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+  main { padding: 18px 20px 60px; max-width: 1100px; margin: 0 auto; }
+  .view[hidden] { display: none; }
+
+  /* ---- filters page ---- */
+  .group { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 15px 17px; margin-bottom: 12px; }
+  .group > h2 { font-size: 13.5px; margin: 0 0 3px; font-weight: 600; }
+  .group .hint { color: var(--muted); font-size: 12.5px; margin: 0 0 10px; }
+
+  .opts { display: flex; flex-wrap: wrap; gap: 7px; }
+  .opt {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px;
+    padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px;
+    cursor: pointer; user-select: none; background: var(--panel);
+  }
+  .opt:hover { border-color: var(--muted); }
+  .opt:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent); font-weight: 500; }
+  .opt input { margin: 0; accent-color: var(--accent); }
+
+  input[type=text], input[type=number], select {
+    padding: 7px 10px; font: inherit; font-size: 14px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text);
+  }
+  input[type=text].wide { width: 100%; }
+  .range { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .range input { width: 92px; }
+  .range span { color: var(--muted); font-size: 13px; }
+  .sub { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+  .sub[hidden] { display: none; }
+  .sub h3 { font-size: 12.5px; margin: 0 0 8px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+  /* location picker — collapsed dropdown, expands on click */
+  .dd { position: relative; }
+  .dd-trigger {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; text-align: left; padding: 9px 12px; min-height: 40px;
+  }
+  .dd-trigger .caret { color: var(--muted); font-size: 11px; flex: none; }
+  .dd.open .dd-trigger { border-color: var(--accent); }
+  .dd-panel {
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 10px 34px rgba(0,0,0,.18); padding: 11px;
+  }
+  .dd-panel[hidden] { display: none; }
+  .dd-panel > input { width: 100%; margin-bottom: 9px; }
+  .dd-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
+
+  .loclist { max-height: 290px; overflow-y: auto; }
+  .loclist h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 12px 0 6px; }
+  .loclist h4:first-child { margin-top: 0; }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .tag {
+    background: color-mix(in srgb, var(--accent) 15%, transparent); border: 1px solid var(--accent);
+    border-radius: 999px; font-size: 12.5px; padding: 3px 9px; display: inline-flex; gap: 6px; align-items: center;
+  }
+  .tag b { cursor: pointer; font-weight: 700; opacity: .6; }
+  .tag b:hover { opacity: 1; }
+
+  /* ---- jobs page ---- */
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .toolbar input[type=text] { max-width: 260px; }
+  .job { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; display: grid; grid-template-columns: 54px 1fr; gap: 14px; }
+  .job.unscored { grid-template-columns: 1fr; }
+
+  /* score badge */
+  .badge { text-align: center; }
+  .badge .n { font-size: 21px; font-weight: 700; line-height: 1.1; }
+  .badge .v { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .badge.strong .n { color: var(--accent); }
+  .badge.decent .n { color: #c98a00; }
+  .badge.weak   .n { color: var(--muted); }
+  .badge.skip   .n { color: var(--muted); opacity: .55; }
+  .badge.error  .n { color: #c0392b; font-size: 15px; }
+
+  .why { font-size: 13px; color: var(--muted); margin: 7px 0 0; }
+  .why b { color: var(--text); font-weight: 600; }
+  details.more { margin-top: 8px; }
+  details.more summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
+  details.more summary:hover { color: var(--text); }
+  .reqs { margin: 8px 0 0; font-size: 12.5px; }
+  .reqs li { margin: 2px 0; }
+  .reqs .met { color: var(--accent); }
+  .reqs .partial { color: #c98a00; }
+  .reqs .missing { color: #c0392b; }
+  .flags { font-size: 12.5px; color: #c0392b; margin-top: 6px; }
+  .caps { font-size: 12px; color: var(--muted); margin-top: 6px; font-style: italic; }
+  .job h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; line-height: 1.35; }
+  .job h3 a { color: inherit; text-decoration: none; }
+  .job h3 a:hover { color: var(--accent); text-decoration: underline; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+  .meta .money { color: var(--text); font-weight: 600; }
+  .desc { font-size: 13.5px; color: var(--muted); margin: 8px 0 0; }
+  .skills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .skill { font-size: 11.5px; background: var(--chip); color: var(--muted); padding: 2.5px 8px; border-radius: 999px; }
+
+  pre.log {
+    background: var(--chip); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; font-size: 12px; white-space: pre-wrap; word-break: break-word;
+    max-height: 240px; overflow: auto; margin: 0 0 14px;
+  }
+  textarea {
+    width: 100%; min-height: 380px; padding: 11px 13px; font-size: 13px; line-height: 1.6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text);
+    resize: vertical;
+  }
+  textarea:focus { outline: none; border-color: var(--accent); }
+  .savebar { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .ok { color: var(--accent); }
+  .bad { color: #c0392b; }
+
+  .lede { color: var(--muted); font-size: 13px; margin: 0 0 14px; max-width: 70ch; }
+
+  /* ---- schedule page ---- */
+  .sched-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .sched-row label { font-size: 13px; color: var(--muted); }
+  .sched-row input[type=time], .sched-row input[type=number], .sched-row select {
+    font: inherit; font-size: 14px; padding: 7px 9px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  }
+  .sched-row input[type=number] { width: 82px; }
+  .days { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .days button {
+    padding: 7px 0; width: 46px; font-size: 13px; text-align: center;
+  }
+  .days button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .switch { display: flex; align-items: center; gap: 9px; font-size: 14px; }
+  .switch input { width: 17px; height: 17px; accent-color: var(--accent); }
+  .next-run { font-size: 13px; color: var(--muted); margin-top: 12px; }
+  .next-run b { color: var(--text); font-weight: 600; }
+  button.danger { border-color: #c0392b; color: #c0392b; font-weight: 600; }
+  button.danger:hover:not(:disabled) { background: #c0392b; border-color: #c0392b; color: #fff; }
+  .live { display: flex; align-items: baseline; gap: 9px; font-size: 13.5px; }
+  .live .dot { width: 9px; height: 9px; border-radius: 999px; flex: none; align-self: center; }
+  .live .dot.on { background: var(--accent); }
+  .live .dot.off { background: var(--muted); }
+  .live-sub { color: var(--muted); font-size: 12.5px; margin: 6px 0 0 18px; }
+  .actlog {
+    background: var(--chip); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; max-height: 260px; overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .actlog .row { display: flex; gap: 10px; padding: 2px 0; }
+  .actlog .t { color: var(--muted); flex: none; }
+  .actlog .warn { color: #b8860b; }
+  .actlog .error { color: #c0392b; }
+
+  /* ---- judge page ---- */
+  .prov { border: 1px solid var(--line); border-radius: 11px; padding: 15px 17px; margin-bottom: 12px; background: var(--panel); }
+  .prov.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .prov-head { display: flex; align-items: center; gap: 10px; }
+  .prov-head input[type=radio] { width: 17px; height: 17px; accent-color: var(--accent); }
+  .prov-head b { font-size: 14px; }
+  .prov-head .tag { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+  .prov-head .tag.free { color: var(--accent); }
+  .prov-body { margin: 11px 0 0 27px; }
+  .prov-body .hint { margin: 0 0 9px; }
+  .keyrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .keyrow input[type=password], .keyrow input[type=text] {
+    flex: 1; min-width: 240px; font: inherit; font-size: 13px; padding: 8px 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .modelrow { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .modelrow select { font: inherit; font-size: 13.5px; padding: 7px 9px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  .modelnote { font-size: 12px; color: var(--muted); }
+
+  /* run progress */
+  .progress {
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 14px;
+  }
+  .progress[hidden] { display: none; }
+  .prow { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+  .prow strong { font-size: 13.5px; }
+  .bar { height: 6px; border-radius: 999px; background: var(--chip); overflow: hidden; }
+  .bar .fill {
+    height: 100%; width: 0%; background: var(--accent); border-radius: 999px;
+    transition: width .4s ease;
+  }
+  .bar.indet .fill {
+    width: 35%; animation: slide 1.4s ease-in-out infinite;
+  }
+  @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+  #pg-current { margin-top: 7px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .job.err { border-color: color-mix(in srgb, #c0392b 35%, var(--line)); }
+  table.runs { border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+  table.runs th, table.runs td { text-align: left; padding: 3px 16px 3px 0; color: var(--muted); }
+  table.runs th { font-weight: 600; }
+  .empty { color: var(--muted); padding: 50px 0; text-align: center; }
+  .spin { display: inline-block; animation: sp 1s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  code.url { font-size: 11.5px; color: var(--muted); word-break: break-all; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Upwork Agent</h1>
+  <div class="tabs">
+    <button id="tab-jobs" class="on">Top picks</button>
+    <button id="tab-all">All recent</button>
+    <button id="tab-backlog">All jobs</button>
+    <button id="tab-errors">Issues</button>
+    <button id="tab-filters">Filters</button>
+    <button id="tab-schedule">Schedule</button>
+    <button id="tab-judge">Judge</button>
+    <button id="tab-profile">Portfolio</button>
+  </div>
+  <span class="grow"></span>
+  <span class="status" id="status"></span>
+  <button id="score" title="Re-judge jobs after editing your portfolio">Re-score</button>
+  <button id="run" class="primary">Fetch &amp; score</button>
+</header>
+
+<main>
+  <!-- ============ JOB VIEWS ============ -->
+  <section class="view" id="view-jobs">
+    <div class="progress" id="progress" hidden>
+      <div class="prow">
+        <span class="spin" id="pg-spin">◐</span>
+        <strong id="pg-label">Working…</strong>
+        <span class="status" id="pg-sub"></span>
+        <span class="grow"></span>
+        <span class="status" id="pg-time"></span>
+      </div>
+      <div class="bar"><div class="fill" id="pg-fill"></div></div>
+      <div class="status" id="pg-current"></div>
+      <details class="more" id="log-wrap">
+        <summary>Show details</summary>
+        <pre class="log" id="log" style="margin-top:8px;max-height:180px"></pre>
+      </details>
+    </div>
+    <p class="lede" id="lede-jobs">
+      Recent, well-scoring jobs — what's actually worth your time right now.
+    </p>
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="Filter these results…">
+      <select id="sort">
+        <option value="score">Best score first</option>
+        <option value="newest">Newest first</option>
+        <option value="pay">Highest pay</option>
+      </select>
+      <span class="status" id="count"></span>
+    </div>
+    <div id="jobs"></div>
+  </section>
+
+  <section class="view" id="view-all" hidden>
+    <p class="lede">Everything posted in the last two days, newest first.</p>
+    <div class="toolbar">
+      <input type="text" id="search-all" placeholder="Filter…">
+      <select id="sort-all">
+        <option value="newest">Newest first</option>
+        <option value="score">Best score first</option>
+        <option value="pay">Highest pay</option>
+      </select>
+      <label class="muted" style="font-size:12.5px"><input type="checkbox" id="hide-filtered-all"> hide filter-rejects</label>
+      <span class="status" id="count-all"></span>
+    </div>
+    <div id="jobs-all"></div>
+  </section>
+
+  <section class="view" id="view-backlog" hidden>
+    <p class="lede">
+      Every posting ever fetched, newest first. Nothing is hidden here.
+    </p>
+    <div class="toolbar">
+      <input type="text" id="search-backlog" placeholder="Filter…">
+      <select id="sort-backlog">
+        <option value="newest">Newest first</option>
+        <option value="score">Best score first</option>
+        <option value="pay">Highest pay</option>
+      </select>
+      <label class="muted" style="font-size:12.5px"><input type="checkbox" id="hide-filtered-backlog"> hide filter-rejects</label>
+      <span class="status" id="count-backlog"></span>
+    </div>
+    <div id="jobs-backlog"></div>
+  </section>
+
+  <section class="view" id="view-errors" hidden>
+    <p class="lede">
+      Anything that didn't complete — a job the judge couldn't score, a rate limit,
+      or a posting whose page couldn't be read. Re-score to retry them.
+    </p>
+    <div class="toolbar">
+      <button id="retry-errors">Retry these</button>
+      <span class="status" id="count-errors"></span>
+    </div>
+    <div id="filtered-note"></div>
+    <div id="runs-summary"></div>
+    <div id="jobs-errors"></div>
+  </section>
+
+  <!-- ============ FILTERS ============ -->
+  <section class="view" id="view-filters" hidden>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <strong style="font-size:14px">Search filters</strong>
+      <span class="grow"></span>
+      <button id="clear">Clear all</button>
+      <button id="apply" class="primary">Save &amp; fetch</button>
+    </div>
+    <div id="form"></div>
+    <div class="group">
+      <h2>Resulting search URL</h2>
+      <code class="url" id="preview"></code>
+    </div>
+  </section>
+
+  <!-- ============ SCHEDULE ============ -->
+  <section class="view" id="view-schedule" hidden>
+    <p class="lede">
+      Fetch and score on repeat, in the background. Close the window and the app drops into the
+      menu bar with the schedule still running; a notification tells you when a run finishes and
+      clicking it brings you back here.
+    </p>
+
+    <div class="group">
+      <h2>Run automatically</h2>
+      <p class="hint">Uses whatever is saved on the Filters tab.</p>
+      <label class="switch"><input type="checkbox" id="sc-enabled"> Enable the schedule</label>
+      <div class="savebar" id="sc-offbar" hidden>
+        <button id="sc-off" class="danger">Stop background runs</button>
+        <span class="status">Turns the schedule off. Nothing runs until you switch it back on.</span>
+      </div>
+    </div>
+
+    <div class="group" id="sc-liveness">
+      <h2>Right now</h2>
+      <div id="sc-live"></div>
+    </div>
+
+    <div class="group">
+      <h2>When</h2>
+      <p class="hint">Pick the days, the window, and how often to run inside it.</p>
+      <div class="days" id="sc-days"></div>
+      <div class="sched-row">
+        <label for="sc-start">Between</label>
+        <input type="time" id="sc-start">
+        <label for="sc-end">and</label>
+        <input type="time" id="sc-end">
+        <label for="sc-interval">every</label>
+        <select id="sc-interval">
+          <option value="15">15 minutes</option>
+          <option value="30">30 minutes</option>
+          <option value="60">1 hour</option>
+          <option value="120">2 hours</option>
+          <option value="180">3 hours</option>
+          <option value="360">6 hours</option>
+          <option value="720">12 hours</option>
+        </select>
+      </div>
+      <p class="hint" style="margin-top:12px;margin-bottom:0">
+        An end time earlier than the start means the window runs overnight — 22:00 to 06:00 belongs
+        to the day it starts on. Fifteen minutes is the floor: scraping harder than that is what
+        actually gets an IP blocked, and freshness stops paying off long before then.
+      </p>
+      <div class="next-run" id="sc-next"></div>
+    </div>
+
+    <div class="group">
+      <h2>Options</h2>
+      <div class="sched-row" style="margin-top:0">
+        <label class="switch"><input type="checkbox" id="sc-notify"> Notify me when a run finishes</label>
+        <button id="sc-test">Send a test notification</button>
+        <span class="status" id="sc-test-status"></span>
+      </div>
+      <p class="hint" style="margin:2px 0 0 26px">
+        Nothing appearing? macOS silently refuses notifications from an unsigned app. Quit, run
+        <code>npm run sign</code>, and start again. If that's already done, check
+        <b>System Settings → Notifications → Electron</b> is set to Allow and that Do Not Disturb
+        is off. Either way the result shows up in Activity below.
+      </p>
+      <div class="sched-row">
+        <label class="switch"><input type="checkbox" id="sc-background"> Keep running after I close the window</label>
+      </div>
+      <p class="hint" style="margin:2px 0 0 26px">
+        On, the app hides into the menu bar and keeps its schedule. Off, closing the window quits
+        the app and nothing runs until you open it again. Either way, <b>Quit stops everything</b> —
+        use <b>Open at login</b> in the menu bar if you want it back automatically.
+      </p>
+      <div class="sched-row">
+        <label class="switch"><input type="checkbox" id="sc-launch"> Run once when the app starts</label>
+      </div>
+      <div class="sched-row">
+        <label for="sc-limit">Judge at most</label>
+        <input type="number" id="sc-limit" min="1" max="250" step="10">
+        <label>jobs per run</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Last run</h2>
+      <div id="sc-last" class="hint" style="margin-bottom:0">Nothing yet.</div>
+      <div class="savebar">
+        <button id="sc-run">Run now</button>
+        <span class="status" id="sc-status"></span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Activity</h2>
+      <p class="hint">
+        Every decision the scheduler makes, newest first. A "Waiting" line every few minutes means
+        the timer is alive; a long gap between them means macOS suspended the app instead of
+        letting it tick.
+      </p>
+      <div id="sc-activity" class="actlog">Nothing yet.</div>
+      <div class="savebar">
+        <span class="status" id="sc-tick"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ JUDGE ============ -->
+  <section class="view" id="view-judge" hidden>
+    <p class="lede">
+      Which model reads each posting and scores it against your portfolio. Your key is stored on
+      this machine only, and never leaves it except to talk to the provider you pick.
+    </p>
+    <div id="judge-panel"></div>
+  </section>
+
+  <!-- ============ PORTFOLIO ============ -->
+  <section class="view" id="view-profile" hidden>
+    <div class="group">
+      <h2>Fetch from a link</h2>
+      <p class="hint">
+        Optional shortcut. Give a public page — your Upwork profile, your site, an about
+        page — and its text is dropped into the portfolio box below for you to keep or trim.
+        It's copied as-is, nothing is rewritten. LinkedIn blocks this and will fail.
+      </p>
+      <div class="range">
+        <input type="text" id="imp-url" class="wide" style="flex:1;min-width:240px" placeholder="https://www.upwork.com/freelancers/~your-profile">
+        <button id="imp-go">Fetch page text</button>
+      </div>
+      <div id="imp-status" class="hint" style="margin-top:10px"></div>
+    </div>
+
+    <div class="group">
+      <h2>Portfolio</h2>
+      <p class="hint">
+        Type it, paste it, or paste your whole Upwork profile — <b>formatting doesn't matter</b>.
+        It's stored exactly as you write it and the judge reads it directly when scoring.
+        Worth adding in your own words: your rate, and any work you'd turn down.
+      </p>
+      <textarea id="ta-portfolio" spellcheck="false"></textarea>
+      <div class="savebar">
+        <button id="save-portfolio" class="primary">Save portfolio</button>
+        <span class="status" id="st-portfolio"></span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Not interested in</h2>
+      <p class="hint">
+        Work you'd turn down, in your own words — one per line, or a sentence, whatever.
+        This is the strongest signal in the whole tool: anything matching here is treated
+        as a deal-breaker rather than something the judge has to guess at.
+        <br><b>Pay floors live in Preferences below</b>, so you don't need to repeat them here.
+      </p>
+      <textarea id="ta-exclusions" style="min-height:200px" spellcheck="false"
+        placeholder="e.g.&#10;Day-to-day ad buying&#10;General web development&#10;Design or copywriting"></textarea>
+      <div class="savebar">
+        <button id="save-exclusions" class="primary">Save exclusions</button>
+        <span class="status" id="st-exclusions"></span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Keywords</h2>
+      <p class="hint">
+        Words that mean a job <b>might</b> be yours. A posting is skipped without being judged
+        only if <b>none</b> of these appear in its title or skill tags — everything else goes to
+        the judge, which decides properly against your portfolio and exclusions.
+        <br><b>Read from your portfolio above</b>, by pattern matching — no AI. Rebuild it after
+        editing your portfolio, then prune anything odd. Keep it wide: a term here costs one AI
+        call, a term <i>missing</i> means those jobs are never seen at all.
+        One per line; <code>#</code> starts a comment.
+      </p>
+      <textarea id="ta-keywords" style="min-height:260px" spellcheck="false"></textarea>
+      <div class="savebar">
+        <button id="save-keywords" class="primary">Save keywords</button>
+        <button id="rebuild-keywords">Rebuild from my portfolio</button>
+        <span class="status" id="st-keywords"></span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Scoring rubric</h2>
+      <p class="hint">How the judge weighs things and what counts as a deal-breaker.</p>
+      <textarea id="ta-rubric" spellcheck="false"></textarea>
+      <div class="savebar">
+        <button id="save-rubric">Save rubric</button>
+        <span class="status" id="st-rubric"></span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Preferences &amp; thresholds</h2>
+      <p class="hint">Your pay floors, freshness and competition targets, and the score caps. Must stay valid JSON.</p>
+      <textarea id="ta-preferences" spellcheck="false" style="min-height:260px"></textarea>
+      <div class="savebar">
+        <button id="save-preferences">Save preferences</button>
+        <span class="status" id="st-preferences"></span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>After editing</h2>
+      <p class="hint">
+        Changes apply to the next scoring run. To see their effect on jobs you've already
+        judged, shift-click <b>Score jobs</b> to re-score everything.
+      </p>
+      <button id="rescore-now">Re-score all jobs</button>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let FILTERS = {}, LOC_GROUPS = [], CATEGORIES = [], TIMEZONES = [], JOBS = [], RUNS = [], RECENT_SINCE = null, RECENT_HOURS = 48;
+let state = JSON.parse(localStorage.getItem('filters') || '{}');
+let filtersLoaded = false;
+
+/* ================= judge (model + api key) =================
+
+   The page never sees a saved key — the server sends back only a masked
+   preview, and an empty field on save means "leave it alone". So a key can be
+   replaced from here but never read back out. */
+let JUDGE = null;
+
+function loadJudge() {
+  fetch('/api/llm').then((r) => r.json()).then((state) => { JUDGE = state; renderJudge(); }).catch(() => {});
+}
+
+function renderJudge() {
+  if (!JUDGE) return;
+  const mount = $('judge-panel');
+
+  mount.innerHTML = JUDGE.providers.map((p) => {
+    const chosen = JUDGE.provider === p.id;
+    const key = JUDGE.keys[p.id] ?? { set: false };
+    const free = p.id === 'gemini';
+    const models = p.models.map((m) => {
+      const sel = (JUDGE.models[p.id] ?? p.defaultModel) === m.id ? ' selected' : '';
+      return `<option value="${esc(m.id)}"${sel}>${esc(m.label)}</option>`;
+    }).join('');
+    return `
+      <div class="prov ${chosen ? 'on' : ''}">
+        <label class="prov-head">
+          <input type="radio" name="prov" value="${esc(p.id)}" ${chosen ? 'checked' : ''}>
+          <b>${esc(p.label)}</b>
+          <span class="tag ${free ? 'free' : ''}">${free ? 'Free' : 'Paid'}</span>
+          ${key.set ? `<span class="tag">key saved ${esc(key.preview)}</span>` : '<span class="tag">no key</span>'}
+        </label>
+        <div class="prov-body">
+          <p class="hint">${esc(p.keyHint)} <a href="${esc(p.keyUrl)}" target="_blank" rel="noopener">Get a key →</a></p>
+          <div class="keyrow">
+            <input type="password" id="key-${esc(p.id)}" placeholder="${key.set ? 'Saved — type a new key to replace it' : 'Paste your API key'}" autocomplete="off" spellcheck="false">
+            <button data-test="${esc(p.id)}">Test</button>
+          </div>
+          <div class="modelrow">
+            <label class="modelnote" for="model-${esc(p.id)}">Model</label>
+            <select id="model-${esc(p.id)}">${models}</select>
+            <span class="modelnote" id="note-${esc(p.id)}"></span>
+          </div>
+          <div class="status" id="test-${esc(p.id)}" style="margin-top:9px"></div>
+        </div>
+      </div>`;
+  }).join('') + `
+    <div class="savebar">
+      <button id="judge-save" class="primary">Save</button>
+      <span class="status" id="judge-status">${
+        JUDGE.ready
+          ? `Ready — judging with ${esc(JUDGE.activeModel)}.`
+          : '⚠️ No key for the selected provider. Scoring will fail until you add one.'
+      }</span>
+    </div>`;
+
+  for (const p of JUDGE.providers) {
+    const sel = $(`model-${p.id}`);
+    const note = () => {
+      const m = p.models.find((x) => x.id === sel.value);
+      $(`note-${p.id}`).textContent = m ? m.note : '';
+    };
+    sel.onchange = note;
+    note();
+    mount.querySelector(`[data-test="${p.id}"]`).onclick = () => testJudge(p.id);
+  }
+  for (const r of mount.querySelectorAll('input[name=prov]')) {
+    r.onchange = () => { JUDGE.provider = r.value; renderJudge(); };
+  }
+  $('judge-save').onclick = saveJudge;
+}
+
+function collectJudge() {
+  const keys = {}, models = {};
+  for (const p of JUDGE.providers) {
+    const k = $(`key-${p.id}`)?.value.trim();
+    if (k) keys[p.id] = k;
+    models[p.id] = $(`model-${p.id}`)?.value;
+  }
+  return { provider: JUDGE.provider, keys, models };
+}
+
+function saveJudge() {
+  const body = collectJudge();
+  $('judge-status').textContent = 'Saving…';
+  fetch('/api/llm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then((r) => r.json())
+    .then(() => loadJudge())
+    .catch(() => { $('judge-status').textContent = 'Could not save.'; });
+}
+
+/**
+ * A real round trip, not a format check.
+ *
+ * Uses whatever is typed in the box if anything is, so you can verify a key
+ * before committing it — and the saved one otherwise.
+ */
+function testJudge(id) {
+  const el = $(`test-${id}`);
+  el.textContent = 'Testing…';
+  el.className = 'status';
+  fetch('/api/llm/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: id, key: $(`key-${id}`).value.trim() || undefined, model: $(`model-${id}`).value }),
+  })
+    .then((r) => r.json())
+    .then((d) => {
+      el.className = d.ok ? 'status ok' : 'status bad';
+      el.textContent = d.ok
+        ? `✓ Works — ${d.model} replied in ${(d.ms / 1000).toFixed(1)}s`
+        : `✗ ${d.error ?? 'no reply'}`;
+    })
+    .catch(() => { el.className = 'status bad'; el.textContent = '✗ could not reach the app'; });
+}
+
+/* ================= schedule =================
+
+   The page never decides when to run — it reads and writes a config the server
+   acts on, so a schedule set here keeps running with this tab closed, and the
+   menu bar, the CLI and any other window all see the same one. */
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+let SCHEDULE = null;
+
+function loadSchedule() {
+  fetch('/api/schedule').then((r) => r.json()).then((state) => {
+    SCHEDULE = state;
+    renderSchedule();
+  }).catch(() => {});
+}
+
+function renderSchedule() {
+  if (!SCHEDULE) return;
+  const c = SCHEDULE.config;
+
+  $('sc-enabled').checked = c.enabled;
+  $('sc-notify').checked = c.notify;
+  $('sc-launch').checked = c.runOnLaunch;
+  $('sc-background').checked = c.background;
+  // The kill switch only exists when there is something to kill.
+  $('sc-offbar').hidden = !c.enabled;
+  $('sc-start').value = c.startTime;
+  $('sc-end').value = c.endTime;
+  $('sc-limit').value = c.limit;
+
+  // The interval dropdown only lists sensible steps, but a config written by
+  // hand may hold anything — show it rather than silently snapping to 15.
+  const sel = $('sc-interval');
+  if (!Array.from(sel.options).some((o) => Number(o.value) === c.intervalMinutes)) {
+    sel.add(new Option(`${c.intervalMinutes} minutes`, String(c.intervalMinutes)));
+  }
+  sel.value = String(c.intervalMinutes);
+
+  $('sc-days').innerHTML = DAY_NAMES
+    .map((d, i) => `<button data-day="${i}" class="${c.days.includes(i) ? 'on' : ''}">${d}</button>`)
+    .join('');
+  for (const b of $('sc-days').querySelectorAll('button')) {
+    b.onclick = () => {
+      const day = Number(b.dataset.day);
+      const days = c.days.includes(day) ? c.days.filter((d) => d !== day) : [...c.days, day];
+      // The server falls back to the default set when given none, which would
+      // look like the click did the opposite of what you asked.
+      if (days.length) saveSchedule({ days: days.sort() });
+    };
+  }
+
+  renderNextRun();
+  renderLastRun();
+  renderLive();
+  renderActivity();
+}
+
+/** The scheduler's own running commentary, so "nothing happened" is diagnosable. */
+function renderActivity() {
+  const rows = SCHEDULE?.activity ?? [];
+  $('sc-activity').innerHTML = rows.length
+    ? rows.map((a) => {
+        const t = new Date(a.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const cls = a.level === 'warn' || a.level === 'error' ? a.level : '';
+        return `<div class="row"><span class="t">${esc(t)}</span><span class="${cls}">${esc(a.message)}</span></div>`;
+      }).join('')
+    : 'Nothing yet.';
+
+  // The gap since the last tick is the tell for a suspended process: it should
+  // never exceed about a minute while the schedule is on.
+  const el = $('sc-tick');
+  if (!SCHEDULE?.lastTickAt || !SCHEDULE.config.enabled) {
+    el.textContent = '';
+    return;
+  }
+  const secs = Math.round((Date.now() - new Date(SCHEDULE.lastTickAt)) / 1000);
+  el.textContent = secs > 90
+    ? `⚠️ Last check was ${secs}s ago — the timer should tick every 30s.`
+    : `Timer healthy — last check ${secs}s ago.`;
+}
+
+/**
+ * A plain-English answer to "is this thing actually going to run?".
+ *
+ * The three settings interact in ways that are easy to get wrong — a schedule
+ * that is on but set to quit with the window will not fire overnight, and
+ * nothing else on this page would tell you that.
+ */
+function renderLive() {
+  const c = SCHEDULE?.config;
+  if (!c) return;
+
+  let dot = 'off';
+  let head = 'Not running on its own.';
+  let sub = 'Enable the schedule above to have it fetch without you.';
+
+  if (c.enabled && c.background) {
+    dot = 'on';
+    head = 'Running in the background.';
+    sub = 'Close this window and it keeps its schedule from the menu bar. Quit from the menu bar to stop it.';
+  } else if (c.enabled) {
+    dot = 'on';
+    head = 'Running only while the app is open.';
+    sub = 'Closing this window quits the app and the schedule stops. Turn on "Keep running after I close the window" to change that.';
+  }
+
+  $('sc-live').innerHTML =
+    `<div class="live"><span class="dot ${dot}"></span><b>${esc(head)}</b></div>` +
+    `<div class="live-sub">${esc(sub)}</div>` +
+    `<div class="live-sub" id="sc-now"></div>`;
+  renderRunNow();
+}
+
+/**
+ * Whether a run is happening *right now*.
+ *
+ * Separate from "next run" because the two answer different questions, and the
+ * failure that prompted this — a run wedged for 45 minutes while every later
+ * slot was skipped — was invisible from the schedule alone.
+ */
+function renderRunNow() {
+  fetch('/api/status')
+    .then((r) => r.json())
+    .then((st) => {
+      const el = $('sc-now');
+      if (!el) return;
+      if (!st.running) {
+        el.textContent = '';
+        return;
+      }
+      const mins = Math.round((st.elapsedMs ?? 0) / 60000);
+      const where = st.phase === 'scoring' && st.total
+        ? `scoring ${st.done}/${st.total}`
+        : (st.phase ?? 'working');
+      el.innerHTML = `<b>Running now</b> — ${esc(where)}, ${mins} min elapsed.`;
+    })
+    .catch(() => {});
+}
+
+function renderNextRun() {
+  const el = $('sc-next');
+  if (!SCHEDULE?.config.enabled) {
+    el.innerHTML = 'The schedule is off — nothing will run on its own.';
+    return;
+  }
+  if (!SCHEDULE.nextRunAt) {
+    el.innerHTML = 'No run scheduled — check the days above.';
+    return;
+  }
+  const when = new Date(SCHEDULE.nextRunAt);
+  const mins = Math.max(0, Math.round((when - Date.now()) / 60000));
+  const rel = mins < 1 ? 'any moment' : mins < 60 ? `in ${mins} min` : `in ${Math.round(mins / 60)} h`;
+  el.innerHTML = `Next run <b>${esc(when.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}</b> — ${esc(rel)}.`;
+}
+
+function renderLastRun() {
+  const el = $('sc-last');
+  if (!SCHEDULE?.lastRunAt) {
+    el.textContent = 'Nothing yet.';
+    return;
+  }
+  const when = new Date(SCHEDULE.lastRunAt).toLocaleString();
+  const r = SCHEDULE.lastResult;
+  let what = 'ran';
+  if (r?.needsAttention) what = 'stopped — Cloudflare wanted a check';
+  else if (r && r.ok === false) what = 'failed';
+  else if (r?.added != null) what = `added ${r.added} job${r.added === 1 ? '' : 's'}, ${r.top ?? 0} top pick${r.top === 1 ? '' : 's'}`;
+  el.textContent = `${when} — ${what}.`;
+}
+
+function saveSchedule(patch) {
+  const body = { ...(SCHEDULE?.config ?? {}), ...patch };
+  return fetch('/api/schedule', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+    .then((r) => r.json())
+    .then((state) => {
+      // Render from what came back, not from what was sent: the server clamps
+      // the interval and repairs bad times, and the form should show the truth.
+      SCHEDULE = state;
+      renderSchedule();
+    })
+    .catch(() => {});
+}
+
+$('sc-enabled').onchange = (e) => saveSchedule({ enabled: e.target.checked });
+$('sc-notify').onchange = (e) => saveSchedule({ notify: e.target.checked });
+$('sc-launch').onchange = (e) => saveSchedule({ runOnLaunch: e.target.checked });
+$('sc-background').onchange = (e) => saveSchedule({ background: e.target.checked });
+$('sc-off').onclick = () => saveSchedule({ enabled: false });
+
+$('sc-test').onclick = () => {
+  $('sc-test-status').textContent = 'Sent — watch for a banner.';
+  fetch('/api/notify-test', { method: 'POST' })
+    // The shell reports the outcome back into the activity log, so refresh it
+    // shortly after rather than guessing here.
+    .then(() => setTimeout(loadSchedule, 1200))
+    .catch(() => { $('sc-test-status').textContent = 'Could not reach the app.'; });
+};
+$('sc-start').onchange = (e) => saveSchedule({ startTime: e.target.value });
+$('sc-end').onchange = (e) => saveSchedule({ endTime: e.target.value });
+$('sc-interval').onchange = (e) => saveSchedule({ intervalMinutes: Number(e.target.value) });
+$('sc-limit').onchange = (e) => saveSchedule({ limit: Number(e.target.value) });
+
+$('sc-run').onclick = () => {
+  $('sc-status').textContent = 'Starting…';
+  fetch('/api/schedule/run-now', { method: 'POST' })
+    .then((r) => r.json())
+    .then((d) => { $('sc-status').textContent = d.ok ? 'Running — watch Top picks.' : (d.error ?? 'Could not start.'); })
+    .catch(() => { $('sc-status').textContent = 'Could not start.'; });
+};
+
+// "in 42 min" goes stale just sitting there; cheap enough to keep honest.
+setInterval(renderNextRun, 30_000);
+// Poll the activity log while the Schedule tab is open. The SSE stream covers
+// runs starting and finishing, but not the waiting-heartbeat in between, which
+// is the whole point of the panel.
+setInterval(() => { if (!$('view-schedule').hidden) loadSchedule(); }, 20_000);
+// A run in progress needs a faster clock than the settings around it.
+setInterval(() => { if (!$('view-schedule').hidden) renderRunNow(); }, 5_000);
+
+/* Live events from the server: schedule changes made in the menu bar, and runs
+   that finish while this tab is open. */
+(function subscribe() {
+  const es = new EventSource('/api/events');
+  es.onmessage = (e) => {
+    let event;
+    try { event = JSON.parse(e.data); } catch { return; }
+    if (event.type === 'schedule') {
+      SCHEDULE = event.state;
+      renderSchedule();
+    }
+    if (event.type === 'run-finished' || event.type === 'attention') {
+      loadSchedule();
+      loadJobs(); // a background run just changed the job lists under us
+    }
+  };
+  // EventSource retries on its own, but not after an explicit error close.
+  es.onerror = () => { es.close(); setTimeout(subscribe, 3000); };
+})();
+
+/* ================= tabs ================= */
+const VIEWS = ['jobs', 'all', 'backlog', 'errors', 'filters', 'schedule', 'judge', 'profile'];
+function show(view) {
+  for (const v of VIEWS) {
+    $(`view-${v}`).hidden = view !== v;
+    $(`tab-${v}`).classList.toggle('on', view === v);
+  }
+}
+for (const v of ['jobs', 'all', 'backlog', 'errors', 'filters']) {
+  $(`tab-${v}`).onclick = () => show(v);
+}
+$('tab-profile').onclick = () => { show('profile'); loadProfile(); };
+$('tab-schedule').onclick = () => { show('schedule'); loadSchedule(); };
+$('tab-judge').onclick = () => { show('judge'); loadJudge(); };
+
+/* The search boxes, sort dropdowns and reject toggles were rendered but never
+   listened to, so changing any of them did nothing at all. */
+for (const id of ['search', 'search-all', 'search-backlog']) {
+  const el = $(id);
+  if (el) el.oninput = renderJobs;
+}
+for (const id of ['sort', 'sort-all', 'sort-backlog', 'hide-filtered-all', 'hide-filtered-backlog']) {
+  const el = $(id);
+  if (el) el.onchange = renderJobs;
+}
+
+/* ================= helpers ================= */
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const listOf = (key) => String(state[key] ?? '').split(',').filter(Boolean);
+
+function toggle(key, value, on) {
+  const set = new Set(listOf(key));
+  on ? set.add(value) : set.delete(value);
+  set.size ? (state[key] = [...set].join(',')) : delete state[key];
+  save();
+}
+function setVal(key, value) {
+  value === '' || value == null ? delete state[key] : (state[key] = value);
+  save();
+}
+function save() {
+  localStorage.setItem('filters', JSON.stringify(state));
+  // Mirror to the server so the CLI and any other window see the same filters.
+  if (filtersLoaded) {
+    fetch('/api/filters-state', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state),
+    }).catch(() => {});
+  }
+  renderPreview();
+  renderConditionals();
+}
+
+/* Build a MIN-MAX range string from two inputs; either side may be blank. */
+function rangeFrom(minId, maxId) {
+  const lo = $(minId)?.value.trim() ?? '';
+  const hi = $(maxId)?.value.trim() ?? '';
+  if (!lo && !hi) return '';
+  return `${lo}-${hi}`;
+}
+
+/* ================= filters page ================= */
+function pills(key, values) {
+  const on = new Set(listOf(key));
+  return `<div class="opts">` + Object.entries(values).map(([v, label]) =>
+    `<label class="opt"><input type="checkbox" data-key="${key}" value="${esc(v)}" ${on.has(v) ? 'checked' : ''}>${esc(label)}</label>`
+  ).join('') + `</div>`;
+}
+
+function buildForm() {
+  const f = FILTERS;
+  const [hLo, hHi] = String(state.hourly_rate ?? '').split('-');
+  const amountVals = listOf('amount');
+  // A custom amount range is anything that isn't one of the known buckets.
+  const custom = amountVals.find((v) => !(v in (f.amount?.values ?? {}))) ?? '';
+  const [aLo, aHi] = custom.split('-');
+
+  $('form').innerHTML = `
+    <div class="group">
+      <h2>${esc(f.q.label)}</h2>
+      <p class="hint">${esc(f.q.note ?? '')}</p>
+      <input type="text" class="wide" id="in-q" placeholder="e.g. marketing" value="${esc(state.q ?? '')}">
+    </div>
+
+    <div class="group">
+      <h2>${esc(f.contractor_tier.label)}</h2>
+      ${pills('contractor_tier', f.contractor_tier.values)}
+    </div>
+
+    <div class="group">
+      <h2>${esc(f.t.label)}</h2>
+      ${pills('t', f.t.values)}
+
+      <div class="sub" id="sub-hourly">
+        <h3>Hourly rate</h3>
+        <div class="range">
+          <span>Min</span><input type="number" id="in-hmin" min="0" placeholder="any" value="${esc(hLo ?? '')}">
+          <span>Max</span><input type="number" id="in-hmax" min="0" placeholder="any" value="${esc(hHi ?? '')}">
+          <span>$/hr</span>
+        </div>
+      </div>
+
+      <div class="sub" id="sub-fixed">
+        <h3>Fixed price</h3>
+        ${pills('amount', f.amount.values)}
+        <div class="range">
+          <span>or custom — Min</span><input type="number" id="in-amin" min="0" placeholder="any" value="${esc(aLo ?? '')}">
+          <span>Max</span><input type="number" id="in-amax" min="0" placeholder="any" value="${esc(aHi ?? '')}">
+          <span>$</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>${esc(f.client_hires.label)}</h2>
+      ${pills('client_hires', f.client_hires.values)}
+    </div>
+
+    <div class="group">
+      <h2>${esc(f.category2_uid.label)}</h2>
+      <p class="hint">${esc(f.category2_uid.note ?? '')}</p>
+      <div id="cat-list"></div>
+      <div class="sub" id="sub-subcats" hidden>
+        <h3>Subcategories</h3>
+        <div id="subcat-list"></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>${esc(f.timezone.label)}</h2>
+      <p class="hint">${esc(f.timezone.note ?? '')}</p>
+      <div class="dd" id="tz-dd">
+        <button type="button" class="dd-trigger" id="tz-trigger">
+          <span class="tags" id="tz-summary"></span>
+          <span class="caret">▼</span>
+        </button>
+        <div class="dd-panel" id="tz-panel" hidden>
+          <input type="text" id="tz-search" placeholder="Search timezones…">
+          <div class="loclist" id="tz-list"></div>
+          <div class="dd-foot">
+            <span class="status" id="tz-count"></span>
+            <span>
+              <button type="button" id="tz-clear" style="padding:5px 10px;font-size:12.5px">Clear</button>
+              <button type="button" id="tz-done" style="padding:5px 10px;font-size:12.5px">Done</button>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>${esc(f.location.label)}</h2>
+      <p class="hint">${esc(f.location.note ?? '')}</p>
+      <div class="dd" id="loc-dd">
+        <button type="button" class="dd-trigger" id="loc-trigger">
+          <span class="tags" id="loc-summary"></span>
+          <span class="caret">▼</span>
+        </button>
+        <div class="dd-panel" id="loc-panel" hidden>
+          <input type="text" id="loc-search" placeholder="Search regions, subregions or countries…">
+          <div class="loclist" id="loc-list"></div>
+          <div class="dd-foot">
+            <span class="status" id="loc-count"></span>
+            <span>
+              <button type="button" id="loc-clear" style="padding:5px 10px;font-size:12.5px">Clear</button>
+              <button type="button" id="loc-done" style="padding:5px 10px;font-size:12.5px">Done</button>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>${esc(f.duration_v3.label)}</h2>
+      ${pills('duration_v3', f.duration_v3.values)}
+    </div>
+
+    <div class="group">
+      <h2>${esc(f.workload.label)}</h2>
+      ${pills('workload', f.workload.values)}
+    </div>
+
+    <div class="group">
+      <h2>${esc(f.contract_to_hire.label)}</h2>
+      ${pills('contract_to_hire', f.contract_to_hire.values)}
+    </div>
+
+    <div class="group">
+      <h2>Results</h2>
+      <div class="range">
+        <span>Per page</span>
+        <select id="in-perpage">
+          ${[10, 20, 50].map((n) => `<option value="${n}" ${String(state.per_page ?? '50') === String(n) ? 'selected' : ''}>${n}</option>`).join('')}
+        </select>
+        <span>Page</span>
+        <input type="number" id="in-page" min="1" value="${esc(state.page ?? '1')}">
+      </div>
+    </div>`;
+
+  // pill checkboxes
+  $('form').querySelectorAll('input[data-key]').forEach((el) => {
+    el.onchange = () => toggle(el.dataset.key, el.value, el.checked);
+  });
+
+  $('in-q').oninput = () => setVal('q', $('in-q').value.trim());
+  const hourly = () => setVal('hourly_rate', rangeFrom('in-hmin', 'in-hmax'));
+  $('in-hmin').oninput = hourly; $('in-hmax').oninput = hourly;
+  $('in-amin').oninput = amountCustom; $('in-amax').oninput = amountCustom;
+  $('in-perpage').onchange = () => setVal('per_page', $('in-perpage').value);
+  $('in-page').oninput = () => setVal('page', $('in-page').value);
+
+  // location dropdown wiring
+  $('loc-search').oninput = renderLocations;
+  $('loc-trigger').onclick = () => openLocations($('loc-panel').hidden);
+  $('loc-done').onclick = () => openLocations(false);
+  $('loc-clear').onclick = () => { delete state.location; save(); renderLocations(); };
+
+  $('tz-search').oninput = renderTimezones;
+  $('tz-trigger').onclick = () => openTimezones($('tz-panel').hidden);
+  $('tz-done').onclick = () => openTimezones(false);
+  $('tz-clear').onclick = () => { delete state.timezone; save(); renderTimezones(); };
+
+  renderCategories();
+  renderTimezones();
+  renderLocations();
+  renderConditionals();
+  renderPreview();
+}
+
+/** Custom fixed range replaces any bucket selection (Upwork treats them as one param). */
+function amountCustom() {
+  const r = rangeFrom('in-amin', 'in-amax');
+  const buckets = listOf('amount').filter((v) => v in FILTERS.amount.values);
+  if (r) setVal('amount', r);
+  else setVal('amount', buckets.join(','));
+  // untick buckets while a custom range is active
+  $('form').querySelectorAll('input[data-key="amount"]').forEach((el) => { if (r) el.checked = false; });
+}
+
+/** Show the rate inputs only for the job types that are actually selected. */
+function renderConditionals() {
+  const t = new Set(listOf('t'));
+  const none = t.size === 0; // nothing chosen = both types allowed
+  const h = $('sub-hourly'), fx = $('sub-fixed');
+  if (h) h.hidden = !(none || t.has('0'));
+  if (fx) fx.hidden = !(none || t.has('1'));
+}
+
+function openLocations(open) {
+  $('loc-dd').classList.toggle('open', open);
+  $('loc-panel').hidden = !open;
+  if (open) $('loc-search').focus();
+}
+
+/**
+ * Categories, with subcategories that follow the chosen categories.
+ *
+ * Showing all 64 subcategories at once is unusable, and a subcategory outside
+ * the selected categories returns nothing, so the list only offers the ones
+ * that can actually match.
+ */
+function renderCategories() {
+  const chosen = new Set(listOf('category2_uid'));
+
+  $('cat-list').innerHTML =
+    `<div class="opts">` +
+    CATEGORIES.map((c) =>
+      `<label class="opt"><input type="checkbox" data-cat="${esc(c.uid)}" ${chosen.has(c.uid) ? 'checked' : ''}>${esc(c.label)}</label>`
+    ).join('') + `</div>`;
+
+  $('cat-list').querySelectorAll('input[data-cat]').forEach((el) => {
+    el.onchange = () => {
+      toggle('category2_uid', el.dataset.cat, el.checked);
+      // Drop any subcategory that no longer belongs to a selected category.
+      const stillValid = new Set(
+        CATEGORIES.filter((c) => listOf('category2_uid').includes(c.uid)).flatMap((c) => c.subs.map((x) => x.uid)),
+      );
+      const kept = listOf('subcategory2_uid').filter((u) => stillValid.has(u));
+      kept.length ? setVal('subcategory2_uid', kept.join(',')) : setVal('subcategory2_uid', '');
+      renderCategories();
+    };
+  });
+
+  const active = CATEGORIES.filter((c) => chosen.has(c.uid));
+  $('sub-subcats').hidden = active.length === 0;
+  if (!active.length) return;
+
+  const subChosen = new Set(listOf('subcategory2_uid'));
+  $('subcat-list').innerHTML = active.map((c) =>
+    `${active.length > 1 ? `<h4 style="font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:10px 0 6px">${esc(c.label)}</h4>` : ''}
+     <div class="opts">` +
+    c.subs.map((sc) =>
+      `<label class="opt"><input type="checkbox" data-sub="${esc(sc.uid)}" ${subChosen.has(sc.uid) ? 'checked' : ''}>${esc(sc.label)}</label>`
+    ).join('') + `</div>`
+  ).join('');
+
+  $('subcat-list').querySelectorAll('input[data-sub]').forEach((el) => {
+    el.onchange = () => toggle('subcategory2_uid', el.dataset.sub, el.checked);
+  });
+}
+
+function openTimezones(open) {
+  $('tz-dd').classList.toggle('open', open);
+  $('tz-panel').hidden = !open;
+  if (open) $('tz-search').focus();
+}
+
+function renderTimezones() {
+  const q = ($('tz-search')?.value ?? '').toLowerCase().trim();
+  const chosen = listOf('timezone');
+  const byValue = Object.fromEntries(TIMEZONES.map((t) => [t.value, t.label]));
+
+  $('tz-summary').innerHTML = chosen.length
+    ? chosen.map((v) => `<span class="tag">${esc((byValue[v] ?? v).replace(/^\(UTC([^)]*)\)\s*/, '$1 '))}<b data-rm="${esc(v)}">×</b></span>`).join('')
+    : `<span class="status">Any timezone — click to choose</span>`;
+  $('tz-summary').querySelectorAll('b[data-rm]').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); toggle('timezone', b.dataset.rm, false); renderTimezones(); };
+  });
+
+  const sel = new Set(chosen);
+  const matches = TIMEZONES.filter((t) => !q || t.label.toLowerCase().includes(q) || t.value.toLowerCase().includes(q));
+  $('tz-list').innerHTML = matches.length
+    ? `<div class="opts">` + matches.map((t) =>
+        `<label class="opt"><input type="checkbox" data-tz="${esc(t.value)}" ${sel.has(t.value) ? 'checked' : ''}>${esc(t.label)}</label>`
+      ).join('') + `</div>`
+    : `<div class="status" style="padding:14px 2px">No match for “${esc(q)}”.</div>`;
+
+  $('tz-list').querySelectorAll('input[data-tz]').forEach((el) => {
+    el.onchange = () => { toggle('timezone', el.dataset.tz, el.checked); renderTimezones(); };
+  });
+  if ($('tz-count')) $('tz-count').textContent = chosen.length ? `${chosen.length} selected` : 'none selected';
+}
+
+function renderLocations() {
+  const q = ($('loc-search')?.value ?? '').toLowerCase().trim();
+  const chosen = listOf('location');
+
+  // Collapsed summary: the picked locations as removable tags, or a placeholder.
+  $('loc-summary').innerHTML = chosen.length
+    ? chosen.map((c) => `<span class="tag">${esc(c)}<b data-rm="${esc(c)}">×</b></span>`).join('')
+    : `<span class="status">Anywhere — click to choose</span>`;
+  $('loc-summary').querySelectorAll('b[data-rm]').forEach((b) => {
+    // Don't let removing a tag also toggle the dropdown open.
+    b.onclick = (e) => { e.stopPropagation(); toggle('location', b.dataset.rm, false); renderLocations(); };
+  });
+
+  const sel = new Set(chosen);
+  const matches = LOC_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !q || i.toLowerCase().includes(q)) }));
+  const total = matches.reduce((n, g) => n + g.items.length, 0);
+
+  $('loc-list').innerHTML = total
+    ? matches.filter((g) => g.items.length).map((g) =>
+        `<h4>${esc(g.label)}</h4><div class="opts">` + g.items.map((i) =>
+          `<label class="opt"><input type="checkbox" data-loc="${esc(i)}" ${sel.has(i) ? 'checked' : ''}>${esc(i)}</label>`
+        ).join('') + `</div>`
+      ).join('')
+    : `<div class="status" style="padding:14px 2px">No match for “${esc(q)}”.</div>`;
+
+  $('loc-list').querySelectorAll('input[data-loc]').forEach((el) => {
+    el.onchange = () => { toggle('location', el.dataset.loc, el.checked); renderLocations(); };
+  });
+
+  if ($('loc-count')) {
+    $('loc-count').textContent = chosen.length
+      ? `${chosen.length} selected`
+      : 'none selected';
+  }
+}
+
+/** Mirror of the server's URL builder, for a live preview. */
+function renderPreview() {
+  const u = new URL('https://www.upwork.com/nx/search/jobs');
+  u.searchParams.set('sort', state.sort ?? 'recency');
+  u.searchParams.set('per_page', state.per_page ?? '50');
+  u.searchParams.set('page', state.page ?? '1');
+  for (const [k, v] of Object.entries(state)) {
+    if (k in FILTERS && !['sort', 'per_page', 'page'].includes(k) && v) u.searchParams.set(k, v);
+  }
+  if (!state.t) {
+    const types = [];
+    if (state.hourly_rate) types.push('0');
+    if (state.amount) types.push('1');
+    if (types.length) u.searchParams.set('t', types.join(','));
+  }
+  if ($('preview')) $('preview').textContent = decodeURIComponent(u.toString());
+}
+
+/* ================= jobs page ================= */
+const money = (j) => {
+  if (j.hourlyMin || j.hourlyMax) return j.hourlyMin && j.hourlyMax ? `$${j.hourlyMin}-${j.hourlyMax}/hr` : `$${j.hourlyMin ?? j.hourlyMax}/hr`;
+  if (j.budget) return `$${j.budget} fixed`;
+  return j.jobType === 'hourly' ? 'rate n/a' : 'budget n/a';
+};
+const age = (iso) => {
+  if (!iso) return '';
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (!isFinite(m)) return '';
+  if (m < 60) return `${m}m ago`;
+  if (m < 1440) return `${Math.round(m / 60)}h ago`;
+  return `${Math.round(m / 1440)}d ago`;
+};
+const payKey = (j) => j.hourlyMax ?? j.hourlyMin ?? (j.budget ? j.budget / 1000 : 0);
+
+function scoreOf(j) {
+  return j.score?.score ?? -1;
+}
+
+/**
+ * Split jobs into the buckets that match how you'd actually triage them.
+ *
+ * "Recent" follows your last few runs rather than a fixed clock, so the boundary
+ * moves with how often you use the tool. Anything older drops to the backlog:
+ * by then a posting has collected proposals and is rarely worth chasing.
+ */
+function bucket() {
+  // The three views are nested slices of the same archive, not separate piles:
+  //
+  //   All jobs   every posting ever fetched
+  //   Recent     those posted within RECENT_HOURS (48 by default)
+  //   Top picks  the recent ones that scored well
+  //
+  // They used to be mutually exclusive, which is what made a job "disappear"
+  // from Recent the moment it was good enough for Top picks, and put postings in
+  // Backlog that were newer than things sitting in Recent.
+  const cutoff = Date.now() - RECENT_HOURS * 3600 * 1000;
+  const strongEnough = 60; // "decent" and up
+
+  const out = { top: [], recent: [], all: [], errors: [] };
+  for (const j of JOBS) {
+    if (j.score?.verdict === 'error' || j.detailError) out.errors.push(j);
+
+    out.all.push(j);
+    if (postedMs(j) < cutoff) continue;
+    out.recent.push(j);
+    if (scoreOf(j) >= strongEnough) out.top.push(j);
+  }
+  return out;
+}
+
+/** When the client posted it. Falls back to when we first saw it. */
+function postedMs(j) {
+  const t = new Date(j.postedAt ?? j.firstSeenAt ?? 0).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+function sortJobs(list, mode) {
+  const c = [...list];
+  // Every mode breaks ties on recency, so equal scores (and there are hundreds of
+  // zeros) come out newest-first rather than in whatever order the store happened
+  // to hand them over.
+  const byNew = (a, b) => postedMs(b) - postedMs(a);
+  if (mode === 'pay') return c.sort((a, b) => payKey(b) - payKey(a) || byNew(a, b));
+  if (mode === 'newest') return c.sort(byNew);
+  return c.sort((a, b) => scoreOf(b) - scoreOf(a) || byNew(a, b));
+}
+
+/* "3h ago" alone made it impossible to tell a job posted this morning from one
+   posted yesterday at the same hour, so the exact stamp rides along with it. */
+function postedLabel(j) {
+  const t = postedMs(j);
+  if (!t) return null;
+  const d = new Date(t);
+  const exact = d.toLocaleString([], {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+  const fromSearch = j.postedAt ? '' : ' (first seen)';
+  return `<span title="${esc(d.toString())}">${esc(age(j.postedAt ?? j.firstSeenAt))} · ${esc(exact)}${fromSearch}</span>`;
+}
+
+function jobCard(j) {
+  const s = j.score;
+  const meta = [
+    `<span class="money">${esc(money(j))}</span>`, esc(j.experienceLevel), esc(j.duration),
+    esc(j.engagement), postedLabel(j),
+    j.proposalsText ? `${esc(j.proposalsText)} proposals` : null,
+    j.clientSpend ? `$${Math.round(j.clientSpend).toLocaleString()} client spend` : null,
+  ].filter(Boolean).join(' · ');
+  const skills = (j.skills||[]).slice(0, 8).map((x) => `<span class="skill">${esc(x)}</span>`).join('');
+  const d = (j.description||'').replace(/\s+/g, ' ').trim();
+
+  const badge = s
+    ? `<div class="badge ${esc(s.verdict)}"><div class="n">${s.score ?? '!'}</div><div class="v">${esc(s.verdict)}</div></div>`
+    : `<div class="badge"><div class="n" style="opacity:.35">–</div><div class="v">pending</div></div>`;
+
+  const reqs = (s?.requirements ?? []).map((r) =>
+    `<li><span class="${esc(r.status)}">${r.status === 'met' ? '✓' : r.status === 'partial' ? '~' : '✗'}</span>
+      ${esc(r.text)} <span style="opacity:.6">(${esc(r.type.replace('_',' '))})</span></li>`).join('');
+  const b = s?.breakdown;
+  const prefs = b?.preferences
+    ? Object.entries(b.preferences).filter(([,v]) => v.fit != null)
+        .map(([k,v]) => `${k} ${Math.round(v.fit*100)}%`).join(' · ')
+    : '';
+
+  const detailBlock = s && !b?.prefiltered ? `
+    <details class="more">
+      <summary>Why this score</summary>
+      ${reqs ? `<ul class="reqs">${reqs}</ul>` : ''}
+      ${(s.redFlags||[]).length ? `<div class="flags">⚑ ${s.redFlags.map(esc).join(' · ')}</div>` : ''}
+      ${prefs ? `<div class="caps">${esc(prefs)}</div>` : ''}
+      ${b?.gates?.length ? `<div class="caps">capped: ${b.gates.map(esc).join('; ')}</div>` : ''}
+      ${s.proposalAngle ? `<p class="why"><b>Angle:</b> ${esc(s.proposalAngle)}</p>` : ''}
+    </details>` : '';
+
+  return `<article class="job">
+    ${badge}
+    <div>
+      <h3><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title) || '(untitled)'}</a></h3>
+      <div class="meta">${meta}</div>
+      ${s?.summary ? `<p class="why">${esc(s.summary)}</p>` : ''}
+      ${skills ? `<div class="skills">${skills}</div>` : ''}
+      ${!s && d ? `<p class="desc">${esc(d.slice(0, 200))}${d.length > 200 ? '…' : ''}</p>` : ''}
+      ${detailBlock}
+    </div>
+  </article>`;
+}
+
+const EMPTY_TEXT = {
+  jobs: 'Nothing from the last two days scored 60+. Try “Fetch & score”, or widen your filters.',
+  all: 'Nothing posted in the last two days yet.',
+  backlog: 'No jobs fetched yet. Hit “Fetch & score”.',
+};
+
+function renderList(view, list, { searchId, sortId, countId, mountId, hideId }) {
+  const q = ($(searchId)?.value ?? '').toLowerCase().trim();
+  const hideFiltered = hideId ? ($(hideId)?.checked ?? false) : false;
+
+  let out = list;
+  if (hideFiltered) out = out.filter((j) => !j.score?.breakdown?.prefiltered);
+  if (q) out = out.filter((j) =>
+    `${j.title} ${j.description} ${(j.skills||[]).join(' ')}`.toLowerCase().includes(q));
+  out = sortJobs(out, $(sortId)?.value ?? 'newest');
+
+  const rejects = list.filter((j) => j.score?.breakdown?.prefiltered).length;
+  $(countId).textContent = out.length === list.length
+    ? `${list.length} jobs`
+    : `${out.length} of ${list.length}${hideFiltered && rejects ? ` · ${rejects} rejects hidden` : ''}`;
+  $(mountId).innerHTML = out.length
+    ? out.map(jobCard).join('')
+    : `<div class="empty">${EMPTY_TEXT[view] ?? 'Nothing here.'}</div>`;
+}
+
+/** Errors get their own card — the point is what went wrong and what to do. */
+function renderErrors(list) {
+  $('count-errors').textContent = `${list.length} with issues`;
+
+  const runRows = (RUNS || []).slice(0, 6).map((r) => {
+    const when = new Date(r.at).toLocaleString();
+    return `<tr><td>${esc(when)}</td><td>${r.found ?? '–'}</td><td>${r.new ?? '–'}</td></tr>`;
+  }).join('');
+  $('runs-summary').innerHTML = runRows
+    ? `<details class="more" style="margin-bottom:14px"><summary>Recent runs</summary>
+       <table class="runs"><tr><th>When</th><th>Found</th><th>New</th></tr>${runRows}</table></details>`
+    : '';
+
+  const KIND = {
+    rate_limit: ['Rate limit / quota', 'Gemini\'s free tier was exhausted or throttled. Wait a few minutes and retry.'],
+    network:    ['Network problem', 'The request timed out or dropped. Retrying usually fixes it.'],
+    auth:       ['API key rejected', 'Check GEMINI_API_KEY in your .env file.'],
+    other:      ['Scoring failed', 'The judge returned something unusable.'],
+    // Detail-page outcomes. None of these stop a job being scored — they just
+    // mean it was judged on the posting alone, without client history.
+    private:    ['Private listing', 'Upwork hides the client and proposal details on this one. It was still scored on the posting itself; competition and client history simply count as unknown.'],
+    challenge:  ['Blocked by Cloudflare', 'The job page was challenged, usually from fetching many pages quickly. Retry later and it normally goes through.'],
+    'no-data':  ['No details on the page', 'The page loaded but had no client or proposal section. Scored on the posting alone.'],
+  };
+
+  $('jobs-errors').innerHTML = list.length ? list.map((j) => {
+    const kind = j.score?.errorKind ?? j.detailError ?? 'other';
+    const [label, advice] = KIND[kind] ?? KIND.other;
+    const detail = j.score?.summary ?? j.detailError ?? '';
+    return `<article class="job err">
+      <div class="badge error"><div class="n">!</div><div class="v">${esc(kind)}</div></div>
+      <div>
+        <h3><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title)}</a></h3>
+        <div class="meta">${esc(label)}</div>
+        <p class="why">${esc(advice)}</p>
+        ${detail ? `<pre class="log" style="margin-top:8px;max-height:120px">${esc(detail)}</pre>` : ''}
+      </div>
+    </article>`;
+  }).join('') : `<div class="empty">No issues — everything fetched and scored cleanly.</div>`;
+}
+
+function renderJobs() {
+  const b = bucket();
+  $('tab-jobs').textContent = `Top picks${b.top.length ? ` (${b.top.length})` : ''}`;
+  $('tab-errors').textContent = `Issues${b.errors.length ? ` (${b.errors.length})` : ''}`;
+
+  renderList('jobs', b.top, { searchId:'search', sortId:'sort', countId:'count', mountId:'jobs' });
+  renderList('all', b.recent, { searchId:'search-all', sortId:'sort-all', countId:'count-all',
+                                mountId:'jobs-all', hideId:'hide-filtered-all' });
+  renderList('backlog', b.all, { searchId:'search-backlog', sortId:'sort-backlog', countId:'count-backlog',
+                                 mountId:'jobs-backlog', hideId:'hide-filtered-backlog' });
+  renderErrors(b.errors);
+  renderFiltered(b);
+}
+
+/* An empty Top picks is a real answer, not a broken page — but only if you can
+   see what happened to everything else. */
+function renderFiltered(b) {
+  const el = $('filtered-note');
+  if (!el) return;
+  const maxAgeH = Number(RECENT_HOURS || 48);
+  // b.recent is every posting from the window, judged or not — split it here so
+  // the note reports what the AI actually looked at.
+  const recentFiltered = b.recent.filter((j) => j.score?.breakdown?.prefiltered);
+  const judged = b.recent.length - recentFiltered.length;
+
+  const reasons = {};
+  for (const j of recentFiltered) {
+    const why = (j.score?.breakdown?.gates ?? ['filtered'])[0]
+      .replace(/\$[\d,]+/g, '$…');
+    reasons[why] = (reasons[why] ?? 0) + 1;
+  }
+  const rows = Object.entries(reasons)
+    .sort((a, c) => c[1] - a[1])
+    .map(([why, n]) => `<li>${n} — ${esc(why)}</li>`)
+    .join('');
+
+  el.innerHTML = `<details class="group" style="margin-top:14px">
+    <summary style="cursor:pointer">
+      Last ${maxAgeH}h: <strong>${b.recent.length}</strong> jobs — <strong>${judged}</strong> judged by the AI,
+      <strong>${recentFiltered.length}</strong> rejected by your filters before any AI call
+    </summary>
+    <ul style="font-size:12.5px;color:var(--muted);margin:8px 0 0 18px">${rows || '<li>nothing rejected</li>'}</ul>
+    <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">
+      Rejections cost nothing — no model call, no page load. If too much is being rejected,
+      lower <code>minRelevance</code> or your pay floors in Portfolio → preferences.
+    </p>
+  </details>`;
+}
+
+/* ================= live progress ================= */
+
+let pollTimer = null;
+
+const fmtElapsed = (ms) => {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+};
+
+const PHASE_TEXT = {
+  starting: 'starting up',
+  fetching: 'fetching jobs from Upwork',
+  scoring: 'judging jobs',
+  done: 'finished',
+  error: 'failed',
+};
+
+function paintProgress(st) {
+  const box = $('progress');
+  box.hidden = false;
+  $('pg-label').textContent = st.label ?? 'Working';
+  $('pg-time').textContent = fmtElapsed(st.elapsedMs ?? 0);
+
+  const bar = box.querySelector('.bar');
+  const sub = [];
+  if (st.fresh != null) sub.push(`${st.fresh} new of ${st.found ?? '?'} found`);
+  // Without this, "4 to judge" after a 50-job fetch looks like something broke.
+  if (st.skipped) sub.push(`${st.skipped} skipped by your filters`);
+
+  if (st.phase === 'scoring' && st.total > 0) {
+    // Real progress once we know how many jobs there are to judge.
+    bar.classList.remove('indet');
+    $('pg-fill').style.width = `${Math.round((st.done / st.total) * 100)}%`;
+    sub.push(`${st.done} of ${st.total} judged`);
+  } else if (st.phase === 'done') {
+    bar.classList.remove('indet');
+    $('pg-fill').style.width = '100%';
+  } else {
+    // Fetching has no countable steps, so show motion rather than a fake number.
+    bar.classList.add('indet');
+  }
+
+  $('pg-sub').textContent = `— ${PHASE_TEXT[st.phase] ?? st.phase ?? ''}${sub.length ? ' · ' + sub.join(' · ') : ''}`;
+  $('pg-current').textContent = st.current ? `▸ ${st.current}` : '';
+  $('pg-spin').style.visibility = st.running ? 'visible' : 'hidden';
+
+  if (st.log) {
+    $('log').textContent = st.log;
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+}
+
+/** Poll while something is running so the UI shows life, not a frozen button. */
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    try {
+      const st = await (await fetch('/api/status')).json();
+      paintProgress(st);
+      if (!st.running) {
+        stopPolling();
+        // Give the store a beat to finish its last write, then refresh.
+        setTimeout(loadJobs, 400);
+        setTimeout(() => { $('progress').hidden = true; }, 4000);
+        $('status').textContent = 'idle';
+      }
+    } catch {
+      /* server busy mid-run; try again next tick */
+    }
+  }, 900);
+}
+
+function stopPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+/* ================= actions ================= */
+
+async function loadJobs() {
+  const data = await (await fetch('/api/jobs')).json();
+  JOBS = data.jobs || [];
+  RUNS = data.runs || [];
+  RECENT_SINCE = data.recentSince ?? null;
+  RECENT_HOURS = data.maxAgeHours ?? 48;
+  const st = data.stats ?? {};
+  // Report the recent window, not the whole archive — old jobs are
+  // deliberately never judged, so counting them read as a fault.
+  const pending = st.recentUnscored ?? 0;
+  $('status').textContent = data.fetchedAt
+    ? `updated ${age(data.fetchedAt)} · ${st.recentScored ?? 0}/${st.recentTotal ?? 0} recent scored` +
+      (pending ? ` · ${pending} pending` : '')
+    : '';
+  renderJobs();
+}
+
+/** The main action: fetch new jobs, then judge them, in one pass. */
+async function runFetch() {
+  show('jobs');
+  const btn = $('run');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">◐</span> Fetching &amp; scoring…';
+  $('status').textContent = 'running…';
+  $('progress').hidden = false;
+  $('log').textContent =
+    'Fetching jobs, then judging the new ones. The browser stays hidden unless Cloudflare needs a click.';
+  startPolling();
+  try {
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: state, limit: 60 }),
+    });
+    const out = await res.json();
+    $('log').textContent = out.output || '(no output)';
+    await loadJobs();
+  } catch (e) {
+    $('log').textContent = 'Run failed: ' + e.message;
+  } finally {
+    // The request resolves the instant the child exits, and stopPolling() kills
+    // the interval — so the poller may never get a tick where `running` is false
+    // and would leave the panel frozen mid-"judging" forever. Paint the finished
+    // state here rather than relying on a poll landing in that gap.
+    stopPolling();
+    await settleProgress();
+    btn.disabled = false;
+    btn.innerHTML = 'Fetch &amp; score';
+  }
+}
+
+/** Show the run's final state, then put the panel away. */
+async function settleProgress() {
+  try {
+    const st = await (await fetch('/api/status')).json();
+    paintProgress({ ...st, running: false });
+  } catch {
+    // Server unreachable — at least stop claiming work is in progress.
+    $('pg-spin').style.visibility = 'hidden';
+    $('pg-current').textContent = '';
+  }
+  $('status').textContent = 'idle';
+  setTimeout(() => { $('progress').hidden = true; }, 4000);
+}
+
+/* ================= portfolio page ================= */
+let profileLoaded = false;
+
+const PROFILE_KEYS = ['portfolio', 'exclusions', 'keywords', 'rubric', 'preferences'];
+
+async function loadProfile(force = false) {
+  if (profileLoaded && !force) return;
+  const p = await (await fetch('/api/profile')).json();
+  for (const k of PROFILE_KEYS) $(`ta-${k}`).value = p[k] ?? '';
+  profileLoaded = true;
+}
+
+/* These four Save buttons existed in the markup but had no handler at all, so
+   every edit to the portfolio, exclusions, rubric or preferences was silently
+   thrown away on tab switch. */
+for (const key of PROFILE_KEYS) {
+  const btn = $(`save-${key}`);
+  if (!btn) continue;
+  btn.onclick = async () => {
+    const status = $(`st-${key}`);
+    const content = $(`ta-${key}`).value;
+
+    // preferences.json has to stay parseable — the scorer reads it on every run,
+    // and a stray comma would break scoring rather than this page.
+    if (key === 'preferences') {
+      try { JSON.parse(content); }
+      catch (e) { status.textContent = `Not valid JSON — ${e.message}`; return; }
+    }
+
+    status.textContent = 'Saving…';
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, content }),
+      });
+      const out = await res.json();
+      if (out.ok === false) throw new Error(out.error || 'save failed');
+      status.textContent = `Saved ${new Date().toLocaleTimeString()}`;
+      profileLoaded = false; // re-read from disk next time, so what you see is what ran
+    } catch (e) {
+      status.textContent = 'Save failed: ' + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
+if ($('rebuild-keywords')) {
+  $('rebuild-keywords').onclick = async () => {
+    const status = $('st-keywords');
+    if (!confirm('Replace the keyword list with one read from your portfolio?\n\nYour current list is backed up to keywords.md.bak.')) return;
+    status.textContent = 'Reading your portfolio…';
+    try {
+      const out = await (await fetch('/api/profile/keywords/rebuild', { method: 'POST' })).json();
+      if (!out.ok) throw new Error(out.error || 'rebuild failed');
+      $('ta-keywords').value = out.content;
+      status.textContent = `${out.count} terms read from your portfolio — review and prune, then Save.`;
+    } catch (e) {
+      status.textContent = 'Rebuild failed: ' + e.message;
+    }
+  };
+}
+
+/* Also markup-only until now. */
+if ($('rescore-now')) {
+  $('rescore-now').onclick = () => runScoring({ rescore: true, label: 'Re-scoring' });
+}
+if ($('retry-errors')) {
+  $('retry-errors').onclick = () => runScoring({ rescore: false, label: 'Retrying' });
+}
+
+/** Shared by the re-score and retry buttons. */
+async function runScoring({ rescore, label }) {
+  show('jobs');
+  $('status').textContent = 'running…';
+  $('progress').hidden = false;
+  $('log').textContent = `${label} — judging jobs and fetching their detail pages.`;
+  startPolling();
+  try {
+    const res = await fetch('/api/score', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 60, rescore }),
+    });
+    const out = await res.json();
+    $('log').textContent = out.output || '(no output)';
+    await loadJobs();
+  } catch (e) {
+    $('log').textContent = `${label} failed: ` + e.message;
+  } finally {
+    stopPolling();
+    await settleProgress();
+  }
+}
+
+async function saveProfile(key) {
+  const st = $(`st-${key}`);
+  st.textContent = 'Saving…';
+  st.className = 'status';
+  try {
+    const res = await fetch('/api/profile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, content: $(`ta-${key}`).value }),
+    });
+    const out = await res.json();
+    if (out.ok) {
+      st.textContent = `Saved (${out.bytes} chars)`;
+      st.className = 'status ok';
+    } else {
+      st.textContent = out.error || 'Save failed';
+      st.className = 'status bad';
+    }
+  } catch (e) {
+    st.textContent = e.message;
+    st.className = 'status bad';
+  }
+  setTimeout(() => { st.textContent = ''; st.className = 'status'; }, 6000);
+}
+
+async function importPortfolio() {
+  const st = $('imp-status');
+  const url = $('imp-url').value.trim();
+  if (!url) { st.textContent = 'Enter a URL first.'; st.className = 'hint bad'; return; }
+
+  const btn = $('imp-go');
+  btn.disabled = true;
+  st.className = 'hint';
+  st.innerHTML = '<span class="spin">◐</span> Opening the page and copying its text…';
+  try {
+    const res = await fetch('/api/profile/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }),
+    });
+    const out = await res.json();
+    if (out.ok) {
+      // Straight into the editor, unmodified. Nothing is saved until you say so.
+      $('ta-portfolio').value = out.text;
+      st.className = 'hint ok';
+      st.textContent = `Copied ${out.text.length} characters from “${out.sourceTitle || url}”. Trim it if you like, then Save portfolio.`;
+      $('ta-portfolio').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+      st.className = 'hint bad';
+      st.textContent = out.error || 'Could not read that page.';
+    }
+  } catch (e) {
+    st.className = 'hint bad';
+    st.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function runScore(rescore = false) {
+  show('jobs');
+  const btn = $('score');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">◐</span> Scoring…';
+  $('progress').hidden = false;
+  $('log').textContent = 'Judging jobs — fetching detail pages and calling Gemini…';
+  startPolling();
+  try {
+    const res = await fetch('/api/score', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 20, rescore }),
+    });
+    const out = await res.json();
+    $('log').textContent = out.output || '(no output)';
+    await loadJobs();
+  } catch (e) {
+    $('log').textContent = 'Scoring failed: ' + e.message;
+  } finally {
+    stopPolling();
+    btn.disabled = false;
+    btn.textContent = 'Re-score';
+  }
+}
+
+$('run').onclick = runFetch;
+$('apply').onclick = runFetch;
+$('clear').onclick = () => { state = {}; localStorage.removeItem('filters'); buildForm(); };
+
+(async () => {
+  // If a run is already going (page refreshed, app reopened), show it.
+  try {
+    const st = await (await fetch('/api/status')).json();
+    if (st.running) { paintProgress(st); startPolling(); }
+  } catch { /* server not ready */ }
+
+  // Server-side filters win — they're the shared source of truth.
+  try {
+    const saved = await (await fetch('/api/filters-state')).json();
+    if (saved && Object.keys(saved).length) state = saved;
+  } catch { /* fall back to localStorage */ }
+  filtersLoaded = true;
+
+  const cfg = await (await fetch('/api/filters')).json();
+  FILTERS = cfg.filters; LOC_GROUPS = cfg.locationGroups;
+  CATEGORIES = cfg.categories ?? []; TIMEZONES = cfg.timezones ?? [];
+  buildForm();
+  await loadJobs();
+})();
+
+
+</script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+{
+  "_comment": "Your thresholds. These drive the deterministic half of the score — edit freely, no code changes needed.",
+  "hourly": {
+    "target": 45,
+    "floor": 25
+  },
+  "fixed": {
+    "target": 1200,
+    "floor": 250
+  },
+  "freshness": {
+    "greatMinutes": 120,
+    "okMinutes": 720
+  },
+  "competition": {
+    "greatMax": 5,
+    "okMax": 15
+  },
+  "client": {
+    "goodSpend": 5000,
+    "goodHires": 5
+  },
+  "_scoreMaxAgeHours": "Judge postings up to this old, and treat them as \"recent\" in the app. Anything older is left ungraded and lives in All jobs: by then it has collected proposals and a score wouldn't change what you do.",
+  "scoreMaxAgeHours": 48,
+  "_minRelevance": "OFF by default (0) — every posting that clears your pay floor and the age cap goes to the judge. Your Upwork search query is already the filter, so on a normal run this rule changed nothing while risking the one failure that actually costs you: skipping a job you would have taken. Raise it only if you run broad, keyword-free searches and need to cap AI usage. A keyword scores 3 in the title, 1.5 in the skill tags, 0.5 in the body; 1.5 means \"a keyword in the title or skills\", 0.5 means \"a keyword anywhere\". Keywords come from profile/keywords.md and are still used to judge the best matches first.",
+  "minRelevance": 0,
+  "weights": {
+    "pay": 0.35,
+    "competition": 0.25,
+    "freshness": 0.2,
+    "client": 0.2
+  },
+  "_gates": "Hard caps applied after the base score. A job you can't do stays low no matter how well it pays.",
+  "gates": {
+    "matchesExclusion": 15,
+    "differentTask": 20,
+    "adjacentTask": 62,
+    "oneMustMissing": 50,
+    "twoMustMissing": 25,
+    "threePlusMustMissing": 10,
+    "belowPayFloor": 15,
+    "oneRedFlag": 70,
+    "multipleRedFlags": 45
+  },
+  "_prefFloor": "How much preferences can drag a perfect skill match down. 0.7 = worst-case preferences still keep 70% of the base score.",
+  "prefFloor": 0.7,
+  "_niceWeight": "How much a missing nice-to-have costs relative to a must-have.",
+  "niceWeight": 0.35,
+  "bands": {
+    "strong": 80,
+    "decent": 60,
+    "weak": 30
+  }
+}

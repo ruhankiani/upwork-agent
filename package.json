@@ -1,0 +1,28 @@
+{
+  "name": "upwork-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "fetch": "node src/fetch.js",
+    "ui": "node src/server.js",
+    "postinstall": "node scripts/sign-dev.cjs",
+    "sign": "node scripts/sign-dev.cjs",
+    "pack": "node scripts/build-app.cjs",
+    "install-app": "node scripts/install-app.cjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
+    "playwright": "^1.49.0"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0"
+  },
+  "description": "Watches Upwork for new job postings and judges them against your portfolio.",
+  "author": "Ruhan Kiani"
+}
