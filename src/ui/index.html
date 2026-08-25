@@ -239,6 +239,18 @@
   @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
   #pg-current { margin-top: 7px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .job.err { border-color: color-mix(in srgb, #c0392b 35%, var(--line)); }
+  .letterbar { margin-top: 10px; }
+  details.letter { margin-top: 10px; }
+  details.letter > summary { font-size: 13px; color: var(--text); }
+  details.letter[open] { border: 1px solid var(--line, #e3e3e0); border-radius: 9px; padding: 9px 12px 11px; background: var(--chip, #f6f6f4); }
+  .letterhead { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: 8px 0; }
+  .lettertext { white-space: pre-wrap; font: inherit; font-size: 13px; line-height: 1.5; margin: 0; }
+  .letter .qs { margin-top: 10px; font-size: 12.5px; }
+  .letter .qs ul { margin: 6px 0 0; padding-left: 16px; }
+  .letter .qs li { margin-bottom: 7px; }
+  .letter .q { font-weight: 600; }
+  .letter .a { color: var(--muted, #666); }
+  .letter .warn { color: #b4232a; font-weight: 600; }
   table.runs { border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
   table.runs th, table.runs td { text-align: left; padding: 3px 16px 3px 0; color: var(--muted); }
   table.runs th { font-weight: 600; }
@@ -302,7 +314,7 @@
   </section>
 
   <section class="view" id="view-all" hidden>
-    <p class="lede">Everything posted in the last two days, newest first.</p>
+    <p class="lede">Everything posted in the last day, newest first.</p>
     <div class="toolbar">
       <input type="text" id="search-all" placeholder="Filter…">
       <select id="sort-all">
@@ -542,6 +554,38 @@
     </div>
 
     <div class="group">
+      <h2>Cover letter instructions</h2>
+      <p class="hint">
+        How your letters should read, in your own words. Edited here, applied to every letter
+        written from now on.
+        <br>The rules that keep the feature working — answering in JSON, quoting the client's
+        questions word-for-word, never inventing a client or a number — are in the code and always
+        apply. This is the voice and shape on top of that.
+      </p>
+      <textarea id="ta-letterPrompt" style="min-height:240px" spellcheck="false"></textarea>
+      <div class="savebar">
+        <button id="save-letterPrompt" class="primary">Save instructions</button>
+        <span class="status" id="st-letterPrompt"></span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Cover letter samples</h2>
+      <p class="hint">
+        Letters that read the way you want yours to — real ones you have sent, or ones you have
+        edited into shape. The AI copies the <b>tone and structure</b>, never the content: the
+        facts always come from the job and your portfolio.
+        <br>Separate each with a line of three dashes (<code>---</code>). Leave it empty to use
+        the instructions above alone.
+      </p>
+      <textarea id="ta-letterSamples" style="min-height:240px" spellcheck="false"></textarea>
+      <div class="savebar">
+        <button id="save-letterSamples" class="primary">Save samples</button>
+        <span class="status" id="st-letterSamples"></span>
+      </div>
+    </div>
+
+    <div class="group">
       <h2>Scoring rubric</h2>
       <p class="hint">How the judge weighs things and what counts as a deal-breaker.</p>
       <textarea id="ta-rubric" spellcheck="false"></textarea>
@@ -574,7 +618,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-let FILTERS = {}, LOC_GROUPS = [], CATEGORIES = [], TIMEZONES = [], JOBS = [], RUNS = [], RECENT_SINCE = null, RECENT_HOURS = 48;
+let FILTERS = {}, LOC_GROUPS = [], CATEGORIES = [], TIMEZONES = [], JOBS = [], RUNS = [], RECENT_SINCE = null, RECENT_HOURS = 48, LETTER_MIN_SCORE = 60;
 let state = JSON.parse(localStorage.getItem('filters') || '{}');
 let filtersLoaded = false;
 
@@ -928,6 +972,9 @@ setInterval(() => { if (!$('view-schedule').hidden) renderRunNow(); }, 5_000);
       loadSchedule();
       loadJobs(); // a background run just changed the job lists under us
     }
+    // Letters are written after the run replies, so the cards that were drawn a
+    // moment ago have no letter on them yet.
+    if (event.type === 'letters-finished') loadJobs();
   };
   // EventSource retries on its own, but not after an explicit error close.
   es.onerror = () => { es.close(); setTimeout(subscribe, 3000); };
@@ -947,6 +994,49 @@ for (const v of ['jobs', 'all', 'backlog', 'errors', 'filters']) {
 $('tab-profile').onclick = () => { show('profile'); loadProfile(); };
 $('tab-schedule').onclick = () => { show('schedule'); loadSchedule(); };
 $('tab-judge').onclick = () => { show('judge'); loadJudge(); };
+
+/* Cards are re-rendered wholesale on every refresh, so letter buttons are
+   handled by delegation rather than being re-bound each time. */
+document.addEventListener('click', async (ev) => {
+  const copy = ev.target.closest('[data-copy]');
+  if (copy) {
+    const text = $(`lt-${copy.dataset.copy}`)?.textContent ?? '';
+    try {
+      await navigator.clipboard.writeText(text);
+      copy.textContent = 'Copied';
+    } catch {
+      // Clipboard is blocked in some contexts; selecting it still lets them copy.
+      const el = $(`lt-${copy.dataset.copy}`);
+      if (el) { const r = document.createRange(); r.selectNodeContents(el); getSelection().removeAllRanges(); getSelection().addRange(r); }
+      copy.textContent = 'Selected — press Cmd+C';
+    }
+    setTimeout(() => { copy.textContent = 'Copy'; }, 2500);
+    return;
+  }
+
+  const btn = ev.target.closest('[data-letter]');
+  if (!btn) return;
+
+  const id = btn.dataset.letter;
+  const force = btn.dataset.force === '1';
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = force ? 'Rewriting…' : 'Writing…';
+  try {
+    const res = await fetch('/api/letter', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, force }),
+    });
+    const out = await res.json();
+    if (!out.ok) throw new Error(out.error || 'could not write the letter');
+    const job = JOBS.find((j) => j.id === id);
+    if (job) job.letter = out.letter;
+    renderJobs();
+  } catch (e) {
+    btn.textContent = e.message.slice(0, 60);
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 4000);
+  }
+});
 
 /* The search boxes, sort dropdowns and reject toggles were rendered but never
    listened to, so changing any of them did nothing at all. */
@@ -1401,12 +1491,57 @@ function postedLabel(j) {
   return `<span title="${esc(d.toString())}">${esc(age(j.postedAt ?? j.firstSeenAt))} · ${esc(exact)}${fromSearch}</span>`;
 }
 
+/**
+ * The cover-letter area on a card.
+ *
+ * Only top picks get the button: a letter costs a model call and there is no
+ * point spending one on a job you would not apply to.
+ */
+function letterBlock(j) {
+  if (scoreOf(j) < LETTER_MIN_SCORE) return '';
+  const L = j.letter;
+  if (!L) {
+    return `<div class="letterbar"><button data-letter="${esc(j.id)}">Write cover letter</button></div>`;
+  }
+
+  const qs = (L.questions ?? []).map((q) => `
+    <li>
+      <div class="q">${esc(q.question)}</div>
+      <div class="a">${esc(q.answer)}</div>
+    </li>`).join('');
+
+  // Collapsed by default, like "Why this score" — a top pick is a card you skim
+  // first and act on second, and 150 words of letter on every one of them buries
+  // the list. The summary carries enough to decide whether to open it.
+  const nq = (L.questions ?? []).length;
+  const summary = [`${L.words} words`, nq ? `${nq} question${nq > 1 ? 's' : ''} answered` : null]
+    .filter(Boolean)
+    .join(' · ');
+
+  return `<details class="more letter">
+    <summary><b>Cover letter</b> <span class="muted">— ${summary}</span></summary>
+    <div class="letterhead">
+      <span class="muted">${esc(L.model ?? '')}</span>
+      <span class="grow"></span>
+      <button data-copy="${esc(j.id)}">Copy</button>
+      <button data-letter="${esc(j.id)}" data-force="1">Rewrite</button>
+    </div>
+    <pre class="lettertext" id="lt-${esc(j.id)}">${esc(L.letter)}</pre>
+    ${L.trimmed ? `<div class="muted" style="font-size:12px;margin-top:6px">Removed an echoed heading from the opening: "${esc(L.trimmed)}"</div>` : ''}
+    ${qs ? `<div class="qs"><b>The client asked:</b><ul>${qs}</ul></div>` : ''}
+  </details>`;
+}
+
 function jobCard(j) {
   const s = j.score;
   const meta = [
     `<span class="money">${esc(money(j))}</span>`, esc(j.experienceLevel), esc(j.duration),
     esc(j.engagement), postedLabel(j),
     j.proposalsText ? `${esc(j.proposalsText)} proposals` : null,
+    j.invitesSent ? `${j.invitesSent} invited` : null,
+    // A client already interviewing is the strongest "don't bother" signal on
+    // the page, so it gets a colour rather than sitting in the grey run of meta.
+    j.interviewing ? `<b style="color:var(--bad,#b4232a)">${j.interviewing} interviewing</b>` : null,
     j.clientSpend ? `$${Math.round(j.clientSpend).toLocaleString()} client spend` : null,
   ].filter(Boolean).join(' · ');
   const skills = (j.skills||[]).slice(0, 8).map((x) => `<span class="skill">${esc(x)}</span>`).join('');
@@ -1444,13 +1579,14 @@ function jobCard(j) {
       ${skills ? `<div class="skills">${skills}</div>` : ''}
       ${!s && d ? `<p class="desc">${esc(d.slice(0, 200))}${d.length > 200 ? '…' : ''}</p>` : ''}
       ${detailBlock}
+      ${letterBlock(j)}
     </div>
   </article>`;
 }
 
 const EMPTY_TEXT = {
-  jobs: 'Nothing from the last two days scored 60+. Try “Fetch & score”, or widen your filters.',
-  all: 'Nothing posted in the last two days yet.',
+  jobs: 'Nothing from the last day scored 60+. Try “Fetch & score”, or widen your filters.',
+  all: 'Nothing posted in the last day yet.',
   backlog: 'No jobs fetched yet. Hit “Fetch & score”.',
 };
 
@@ -1576,6 +1712,7 @@ const PHASE_TEXT = {
   starting: 'starting up',
   fetching: 'fetching jobs from Upwork',
   scoring: 'judging jobs',
+  letters: 'writing cover letters for the top picks',
   done: 'finished',
   error: 'failed',
 };
@@ -1597,6 +1734,10 @@ function paintProgress(st) {
     bar.classList.remove('indet');
     $('pg-fill').style.width = `${Math.round((st.done / st.total) * 100)}%`;
     sub.push(`${st.done} of ${st.total} judged`);
+  } else if (st.phase === 'letters' && st.total > 0) {
+    bar.classList.remove('indet');
+    $('pg-fill').style.width = `${Math.round((st.done / st.total) * 100)}%`;
+    sub.push(`${st.done} of ${st.total} written`);
   } else if (st.phase === 'done') {
     bar.classList.remove('indet');
     $('pg-fill').style.width = '100%';
@@ -1648,6 +1789,7 @@ async function loadJobs() {
   RUNS = data.runs || [];
   RECENT_SINCE = data.recentSince ?? null;
   RECENT_HOURS = data.maxAgeHours ?? 48;
+  LETTER_MIN_SCORE = data.letterMinScore ?? 60;
   const st = data.stats ?? {};
   // Report the recent window, not the whole archive — old jobs are
   // deliberately never judged, so counting them read as a fault.
@@ -1710,7 +1852,7 @@ async function settleProgress() {
 /* ================= portfolio page ================= */
 let profileLoaded = false;
 
-const PROFILE_KEYS = ['portfolio', 'exclusions', 'keywords', 'rubric', 'preferences'];
+const PROFILE_KEYS = ['portfolio', 'exclusions', 'keywords', 'letterPrompt', 'letterSamples', 'rubric', 'preferences'];
 
 async function loadProfile(force = false) {
   if (profileLoaded && !force) return;

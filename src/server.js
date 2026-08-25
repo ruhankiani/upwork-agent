@@ -31,6 +31,9 @@ const FETCH_SCRIPT = path.join(ROOT, 'src', 'fetch.js');
 const RUN_SCRIPT = path.join(ROOT, 'src', 'run.js');
 const PORT = Number(process.env.PORT ?? 5173);
 
+// The Top picks bar. Shared with the UI so the button and the endpoint agree.
+const LETTER_MIN_SCORE = 60;
+
 // A fetch drives a real browser, so only one may run at a time.
 let running = false;
 
@@ -109,7 +112,9 @@ function parseProgress(buffer) {
     runState.total = Number(judged[2]);
     runState.current = judged[3].trim();
   }
-  if (/─── Done ───|^Done in /m.test(buffer)) runState.phase = 'done';
+  if (/─── Cover letters ───/.test(buffer)) runState.phase = 'letters';
+  if (/Wrote \d+ letter|Nothing to write/.test(buffer)) runState.phase = 'done';
+  if (/─── Done ───|^Done in /m.test(buffer) && runState.phase !== 'letters') runState.phase = 'done';
 }
 
 /** Keep the UI's idea of "recent" in step with the scorer's age cap. */
@@ -257,6 +262,30 @@ async function summarizeRun(before) {
 }
 
 /**
+ * Write cover letters for whatever the run just promoted to a top pick.
+ *
+ * Deliberately the last thing to happen, and only ever *after* the
+ * `run-finished` broadcast the shell notifies from. Being early on a posting is
+ * worth real points, so nothing may sit between a job being scored and you
+ * being told about it — letters cost a model call each and would delay the
+ * notification by minutes.
+ *
+ * Failure here is not run failure: the jobs are scored and you have been told.
+ * A missing letter is a button press away.
+ */
+async function writeLettersAfterRun(limit = 10) {
+  try {
+    const args = [path.join(ROOT, 'src', 'letters.js'), `--limit=${limit}`, `--min-score=${LETTER_MIN_SCORE}`];
+    const out = await runScript(args, 'Writing cover letters');
+    broadcast({ type: 'letters-finished', ok: out.ok, at: new Date().toISOString() });
+    return out;
+  } catch (err) {
+    scheduler.note(`   cover letters skipped — ${err.message}`);
+    return { ok: false };
+  }
+}
+
+/**
  * One scheduled fetch+score.
  *
  * Uses the saved filters and always passes --no-interactive, so an expired
@@ -296,6 +325,10 @@ async function scheduledRun({ limit, timeoutMs = 45 * 60_000 }) {
 
     const summary = result.ok ? await summarizeRun(before) : null;
     broadcast({ type: 'run-finished', ok: result.ok, summary, at: new Date().toISOString() });
+
+    // Only now, with the notification already out.
+    if (result.ok) await writeLettersAfterRun();
+
     return { ok: result.ok, ...summary, at: new Date().toISOString() };
   } finally {
     running = false;
@@ -352,6 +385,9 @@ const server = createServer(async (req, res) => {
         ...j,
         // `raw` is huge and the UI never uses it; send the useful detail bits only.
         proposalsText: detail?.proposalsText ?? null,
+        letter: j.letter ?? null,
+        interviewing: detail?.interviewing ?? null,
+        invitesSent: detail?.invitesSent ?? null,
         clientSpend: detail?.clientSpend ?? j.clientSpend ?? null,
         clientHires: detail?.clientHires ?? null,
         clientCountry: detail?.clientCountry ?? j.clientCountry ?? null,
@@ -363,6 +399,7 @@ const server = createServer(async (req, res) => {
         // The UI splits recent from backlog on the same age the scorer uses, so
         // the tabs and the "why wasn't this judged" answer never disagree.
         maxAgeHours,
+        letterMinScore: LETTER_MIN_SCORE,
         runs: db.runs.slice(0, 12),
         recentSince: store.recentSince(db, 3),
         fetchedAt: db.runs[0]?.at ?? null,
@@ -415,18 +452,71 @@ const server = createServer(async (req, res) => {
       if (running) return send(res, 409, { ok: false, output: 'Something is already running.' });
       running = true;
       try {
-        const { params = {}, limit = 60 } = await readBody(req);
+        const { params = {}, limit = 60, letters = true } = await readBody(req);
+        const before = await jobIds();
         const args = [path.join(ROOT, 'src', 'run.js'), `--limit=${Number(limit) || 60}`];
         for (const [key, value] of Object.entries(params)) {
           if (key in FILTERS && value !== '' && value != null) args.push(`--${key}=${value}`);
         }
-        return send(res, 200, await runScript(args, 'Fetching & scoring'));
-      } finally {
+        const out = await runScript(args, 'Fetching & scoring');
+
+        if (out.ok) {
+          // Same order as a scheduled run: tell the user first, then spend
+          // model calls on letters.
+          const summary = await summarizeRun(before);
+          broadcast({ type: 'run-finished', ok: true, summary, at: new Date().toISOString() });
+
+          if (letters) {
+            // Answer the browser *now*. Awaiting the letters here kept the POST
+            // open for minutes after the jobs were already scored and visible,
+            // long enough for a client to time the request out and report a
+            // failed run that had in fact succeeded. The page picks the letters
+            // up from the `letters-finished` event instead.
+            send(res, 200, out);
+            writeLettersAfterRun().finally(() => {
+              running = false;
+            });
+            return;
+          }
+        }
+        send(res, 200, out);
         running = false;
+        return;
+      } catch (err) {
+        running = false;
+        throw err;
       }
     }
 
     // Score pending jobs (or re-score everything after a rubric edit).
+    // Write a cover letter for one job. Top picks only — a letter costs a model
+    // call, and there is no sense spending one on a job you would not apply to.
+    if (url.pathname === '/api/letter' && req.method === 'POST') {
+      const { id, force = false } = await readBody(req);
+      const db = await store.load();
+      const job = db.jobs[String(id ?? '')];
+      if (!job) return send(res, 404, { ok: false, error: 'No such job.' });
+
+      const score = job.score?.score ?? -1;
+      if (score < LETTER_MIN_SCORE) {
+        return send(res, 400, {
+          ok: false,
+          error: `Letters are for top picks only — this scored ${score < 0 ? 'nothing yet' : score}, and the bar is ${LETTER_MIN_SCORE}.`,
+        });
+      }
+      if (job.letter && !force) return send(res, 200, { ok: true, letter: job.letter, cached: true });
+
+      try {
+        const { portfolio, exclusions, letterPrompt, letterSamples } = await profile.readAll();
+        const { writeLetter } = await import('./judge/letter.js');
+        job.letter = await writeLetter(job, { portfolio, exclusions, letterPrompt, letterSamples });
+        await store.save(db);
+        return send(res, 200, { ok: true, letter: job.letter });
+      } catch (err) {
+        return send(res, 200, { ok: false, error: err.message });
+      }
+    }
+
     if (url.pathname === '/api/score' && req.method === 'POST') {
       if (running) return send(res, 409, { ok: false, output: 'Something is already running.' });
       running = true;

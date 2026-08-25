@@ -20,6 +20,8 @@ const FILES = {
   portfolio: { file: 'portfolio.md', type: 'text' },
   exclusions: { file: 'exclusions.md', type: 'text' },
   keywords: { file: 'keywords.md', type: 'text' },
+  letterPrompt: { file: 'letter-prompt.md', type: 'text' },
+  letterSamples: { file: 'letter-samples.md', type: 'text' },
   rubric: { file: 'rubric.md', type: 'text' },
   preferences: { file: 'preferences.json', type: 'json' },
 };
