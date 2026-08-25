@@ -47,13 +47,36 @@ function payFit(job, prefs) {
 }
 
 /** Fewer proposals is better. Uses the upper bound of Upwork's bucket. */
+/**
+ * How contested the job already is.
+ *
+ * Proposals are the obvious signal, but invites matter too and in a different
+ * way: proposals are people who found the job, invites are people the client
+ * went looking for. A client hand-inviting a dozen freelancers is working a
+ * shortlist you are not on, so the worse of the two signals decides — being
+ * early on proposals is no comfort if ten people were invited directly.
+ */
 function competitionFit(detail, prefs) {
   const n = detail?.proposalsMax ?? detail?.proposalsMin;
-  if (n == null) return { fit: null, note: 'proposal count unknown' };
-  return {
-    fit: ramp(n, prefs.competition.okMax, prefs.competition.greatMax),
-    note: `${detail.proposalsText ?? n} proposals`,
-  };
+  const invites = detail?.invitesSent;
+  const a = prefs.activity ?? {};
+
+  const proposalFit = n == null ? null : ramp(n, prefs.competition.okMax, prefs.competition.greatMax);
+  const inviteFit =
+    invites == null || a.invitesOkMax == null
+      ? null
+      : ramp(invites, a.invitesOkMax, a.invitesGreatMax);
+
+  const parts = [proposalFit, inviteFit].filter((v) => v != null);
+  if (!parts.length) return { fit: null, note: 'proposal count unknown' };
+
+  const notes = [
+    n == null ? null : `${detail.proposalsText ?? n} proposals`,
+    invites == null ? null : `${invites} invited`,
+    detail?.interviewing ? `${detail.interviewing} interviewing` : null,
+  ].filter(Boolean);
+
+  return { fit: Math.min(...parts), note: notes.join(', ') };
 }
 
 function freshnessFit(job, prefs) {

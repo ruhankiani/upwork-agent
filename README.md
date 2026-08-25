@@ -453,24 +453,123 @@ wakes from sleep.
 
 ### What reaches the model, and what doesn't
 
-Two rules run before a model call is made. Rejections are free — no API call, no page load —
-and are recorded, so a job is only ever rejected once.
+| Rule | Default | Set in | When it runs |
+|---|---|---|---|
+| Older than a day | 24 hours | `scoreMaxAgeHours` | before anything |
+| Under your hourly floor | $25/hr | `hourly.floor` | before anything |
+| Client already interviewing | 0 | `activity.maxInterviewing` | after the detail page |
 
-| Rule | Default | Set in |
-|---|---|---|
-| Under your pay floor | $25/hr, $250 fixed | `hourly.floor`, `fixed.floor` |
-| Older than two days | 48 hours | `scoreMaxAgeHours` |
+Rejections are recorded, so a job is only ever rejected once.
 
-**Nothing is skipped for being off-topic.** There is a keyword gate (`minRelevance`) and it is
-**off by default**, because measuring it on real runs showed it saved nothing: your Upwork
-search query already restricts what comes back, so every fetched job passed the gate anyway
-(51 of 51, at every threshold). All it could still do was skip a job worth reading — and that
-failure costs far more than the model call it saves. Whether a job fits is the judge's call;
-the gate only ever decided whether to ask.
+**There is no fixed-price floor** (`fixed.floor: 0`). Upwork fixed budgets are routinely
+placeholders — a $10 tag on a real tracking job means "let's discuss", not the offer — so a
+floor there threw away real work. Low pay still costs a job points through the pay preference;
+it just no longer skips it unjudged.
 
-Turn it up only if you start running broad, keyword-free searches and need to cap AI usage.
-A keyword scores 3 in the title, 1.5 in the skill tags, 0.5 in the body — so `1.5` means "a
-keyword in the title or skills" and `0.5` means "a keyword anywhere".
+**A client already interviewing is a hard skip.** Once they're talking to someone you're bidding
+against a person they've already met — fifty proposals is a crowd, one interview is a decision
+forming. This can only run *after* the job's own page is fetched, since that's the only place
+the number exists, so it saves the model call but not the page load. Unknown values never
+reject: a page that couldn't be read is not evidence of an interview, and private listings
+still reach you (flagged in **Issues**) so you can judge them yourself.
+
+**Invites are softer.** A client hand-inviting freelancers is working a shortlist you may not be
+on, so invites feed the competition score alongside proposals — the worse of the two decides,
+because being early on proposals is no comfort if ten people were invited directly. Tune with
+`activity.invitesGreatMax` / `invitesOkMax`. Both counts show on every job card.
+
+### Cover letters
+
+Written **automatically after every run**, for that run's top picks — and deliberately as the
+*last* step, after the notification has already gone out. Being early on a posting is worth real
+points, so nothing may sit between a job being scored and you being told about it; letters cost
+a model call each and would delay that by minutes. A letter is also only worth writing once the
+score is final, which it isn't mid-run.
+
+The run's HTTP reply comes back as soon as scoring finishes, and letters land afterwards via the
+`letters-finished` event — so the page is usable while they're still being written.
+
+Each letter sits in a collapsed **Cover letter** dropdown on the card, alongside "Why this
+score" — the summary line shows the word count and how many of the client's questions were
+answered, so you can skim ten top picks without 150 words of letter under each one. Open it for
+the text, **Copy**, and **Rewrite**. Letters are saved with
+the job, so reopening the app never re-spends a call. Only jobs scoring 60+ qualify, enforced by
+the endpoint and not just hidden in the UI.
+
+The letter is grounded in your portfolio and nothing else — it may not invent an employer, a
+metric, a client name or a year of experience.
+
+When a job names a tool your profile doesn't, it answers from the nearest equivalent you *do*
+have and says the approach carries over, rather than apologising for the gap: *"While my primary
+expertise is in Looker Studio and Tableau, the approach to data modeling and visualization is the
+same in Metabase."* It may say the technique transfers; it may not say you have used the tool.
+
+> An earlier version listed these as **Not supported by your profile** — "does not explicitly
+> mention ClickFunnels", "does not list Power BI, though it does list Tableau and Looker Studio".
+> Every one was pedantry about a tool name where the skill obviously carries, and it made the
+> model hedge in its answers instead of answering. Removed.
+
+### Writing them your way
+
+Two files, both editable in **Portfolio**:
+
+| File | What it does |
+|---|---|
+| `profile/letter-prompt.md` | How your letters should read, in your own words |
+| `profile/letter-samples.md` | Letters in the tone you want, separated by `---` |
+
+The samples are copied for **tone and structure only** — the facts always come from the job and
+your portfolio. Leave the samples empty to work from the instructions alone.
+
+The rules that keep the feature working — answering in JSON, quoting the client's questions
+word-for-word, never inventing a client or a number — stay in the code and always apply. The
+editable file is the voice and shape on top of that, so a bad edit changes the writing but can't
+break the pipeline.
+
+```bash
+node src/letters.js                 # top picks from the last day that lack one
+node src/letters.js --limit=5       # cap how many
+node src/letters.js --all           # include older top picks too
+```
+
+### The client's questions
+
+Upwork has two things that look alike, and only one is reachable:
+
+- **Screening questions** — the boxes on the application form. **Not available.** No question
+  field appears anywhere in the public search payload (checked across every field of 272 stored
+  postings), and the form sits behind a login.
+- **Questions in the description** — "Please begin your proposal by explaining…", "share 2
+  examples of…", "state your rate". Roughly **half of postings contain one**, it's plain text in
+  data already fetched, and ignoring it is the fastest way to be binned unread.
+
+The second kind is extracted and answered separately, under **The client asked** on the card.
+
+**Nothing invented survives.** The model must copy each instruction out of the posting
+character-for-character, and that quote is then checked against the posting text; anything not
+found there is discarded. A plausible invented question is worse than none, because you'd paste
+an answer to something nobody asked and look like you hadn't read the brief.
+
+Two independent guards, doing different jobs:
+
+- the **prompt** decides whether something *is* an application question — responsibilities,
+  rhetorical lines and the client's own problems are explicitly not, and an empty list is stated
+  to be the normal, correct answer;
+- the **verifier** decides whether it's *really in the posting*.
+
+**Every question gets a real answer** — one to three sentences you could send as written. Never
+"your profile doesn't mention this", never a blank for you to fill in. Where only you could know
+(a start date, a past client's numbers) it gives the most reasonable answer your profile supports
+and keeps it short, without inventing a named client or a metric.
+
+One quirk: models sometimes open by echoing the job's role title as a heading — "Investment
+Analyst.", "Investment Analyst:", or on its own line. A verbless fragment of four words or fewer
+followed by any of those separators is removed automatically and the card says what was removed.
+A short but real sentence ("Your GA4 is double-counting.") contains a verb and is left alone.
+
+> The first version of this only split on `.!?`, so the model switched to a colon and walked
+> straight past it. Worth knowing if you ever see a label slip through: the separator matters as
+> much as the fragment.
 
 ### Keywords
 
@@ -490,7 +589,7 @@ its first hour rates 45 once it's a day old with 50 proposals in.
 
 New jobs keep arriving, so without an age cap yesterday's postings would sit at the back of the
 queue forever and the unscored pile would only grow. Postings older than
-`scoreMaxAgeHours` (48 by default, in `profile/preferences.json`) are skipped instead: by then
+`scoreMaxAgeHours` (24 by default, in `profile/preferences.json`) are skipped instead: by then
 they've collected proposals and a score wouldn't change what you do. They still appear in
 **All jobs**, just ungraded.
 

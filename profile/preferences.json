@@ -6,7 +6,7 @@
   },
   "fixed": {
     "target": 1200,
-    "floor": 250
+    "floor": 0
   },
   "freshness": {
     "greatMinutes": 120,
@@ -20,13 +20,13 @@
     "goodSpend": 5000,
     "goodHires": 5
   },
-  "_scoreMaxAgeHours": "Judge postings up to this old, and treat them as \"recent\" in the app. Anything older is left ungraded and lives in All jobs: by then it has collected proposals and a score wouldn't change what you do.",
-  "scoreMaxAgeHours": 48,
+  "_scoreMaxAgeHours": "Only judge postings newer than this, and treat them as \"recent\" in the app. A job posted yesterday has already collected proposals and interviews.",
+  "scoreMaxAgeHours": 24,
   "_minRelevance": "OFF by default (0) — every posting that clears your pay floor and the age cap goes to the judge. Your Upwork search query is already the filter, so on a normal run this rule changed nothing while risking the one failure that actually costs you: skipping a job you would have taken. Raise it only if you run broad, keyword-free searches and need to cap AI usage. A keyword scores 3 in the title, 1.5 in the skill tags, 0.5 in the body; 1.5 means \"a keyword in the title or skills\", 0.5 means \"a keyword anywhere\". Keywords come from profile/keywords.md and are still used to judge the best matches first.",
   "minRelevance": 0,
   "weights": {
-    "pay": 0.35,
-    "competition": 0.25,
+    "pay": 0.3,
+    "competition": 0.3,
     "freshness": 0.2,
     "client": 0.2
   },
@@ -50,5 +50,12 @@
     "strong": 80,
     "decent": 60,
     "weak": 30
+  },
+  "_fixed": "floor 0 = no fixed-price floor. Upwork fixed budgets are routinely placeholders ($5, $10) for jobs that are really \"let's discuss\", so a floor here threw away real work. Low pay still costs the job points through the pay preference — it just no longer skips it unjudged.",
+  "_activity": "Signals from the job's own page. `maxInterviewing` is a hard skip: once a client is interviewing someone you are competing with a person they have already spoken to. Invites are softer — a client hand-inviting freelancers is working a shortlist, so a high count costs preference points without skipping the job.",
+  "activity": {
+    "maxInterviewing": 0,
+    "invitesGreatMax": 3,
+    "invitesOkMax": 10
   }
 }

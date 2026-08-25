@@ -44,7 +44,10 @@ export function prefilter(job, prefs, keywords = []) {
   if (rate != null && rate < prefs.hourly.floor) {
     return `hourly max $${rate} is under your $${prefs.hourly.floor} floor`;
   }
-  if (job.jobType === 'fixed' && job.budget != null && job.budget < prefs.fixed.floor) {
+  // A fixed floor of 0 means "no floor". Upwork budgets are routinely
+  // placeholders — a $10 tag on a real tracking job is "let's discuss", not the
+  // offer — so this only applies when you deliberately set one.
+  if (prefs.fixed.floor > 0 && job.jobType === 'fixed' && job.budget != null && job.budget < prefs.fixed.floor) {
     return `fixed budget $${job.budget} is under your $${prefs.fixed.floor} floor`;
   }
 
@@ -61,6 +64,28 @@ export function prefilter(job, prefs, keywords = []) {
   if (floor > 0 && keywords.length) {
     const r = relevance(job, keywords);
     if (r < floor) return `none of your keywords in the title or skills — add one in Portfolio → Keywords if this is work you'd take`;
+  }
+  return null;
+}
+
+/**
+ * Reject on what the job's own page says about how contested it already is.
+ *
+ * Once a client is interviewing someone, you are bidding against a person they
+ * have already talked to; the posting is realistically closed. That is worth a
+ * hard skip in a way a proposal count is not — fifty proposals is a crowd, one
+ * interview is a decision already forming.
+ *
+ * Returns a reason string, or null to carry on. Unknown values never reject:
+ * a page we could not read is not evidence of anything.
+ */
+export function activityGate(detail, prefs) {
+  const max = prefs.activity?.maxInterviewing;
+  if (max == null || !detail) return null;
+
+  const interviewing = detail.interviewing;
+  if (interviewing != null && interviewing > max) {
+    return `client is already interviewing ${interviewing}`;
   }
   return null;
 }
@@ -215,6 +240,22 @@ export async function run(opts = {}) {
             delete job.detailError;
           }
         }
+        // Interviews and invites only exist on the job's own page, so this gate
+        // sits here rather than in prefilter(). The page load is already spent;
+        // skipping here still saves the model call.
+        const activity = activityGate(job.detail, prefs);
+        if (activity) {
+          job.score = {
+            score: 0,
+            verdict: 'skip',
+            summary: `Skipped: ${activity}.`,
+            breakdown: { gates: [activity], prefiltered: true },
+            scoredAt: new Date().toISOString(),
+          };
+          result.skipped++;
+          continue;
+        }
+
         await pace();
         job.score = await judgeOne(job, job.detail, ctx);
         result.scored++;
