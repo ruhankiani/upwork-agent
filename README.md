@@ -14,6 +14,15 @@ worth your time turns up.
 
 ---
 
+## Documentation
+
+| | |
+|---|---|
+| This file | Using the app — install, settings, troubleshooting |
+| [CLAUDE.md](CLAUDE.md) | Context for Claude Code working in this repo |
+| [docs/architecture.md](docs/architecture.md) | How the pipeline, store and API fit together |
+| [docs/decisions.md](docs/decisions.md) | Why things are the way they are, and what failed first |
+
 ## Install
 
 You need a Mac and about five minutes.
